@@ -1,4 +1,5 @@
-export type PulseResult = {status: 'estimated'; bpm: number} | {status: 'failed'}
+export type PulseFailure = 'cancelled' | 'permission-denied' | 'poor-signal' | 'timeout' | 'unavailable'
+export type PulseResult = {status: 'estimated'; bpm: number} | {status: 'failed'; reason: PulseFailure}
 
 export const estimatePulse = async (
   video: HTMLVideoElement,
@@ -16,7 +17,7 @@ export const estimatePulse = async (
     const samples: {t: number; r: number}[] = []
     const started = performance.now()
     while (performance.now() - started < 15000) {
-      if (signal?.aborted) return {status: 'failed'}
+      if (signal?.aborted) return {status: 'failed', reason: 'cancelled'}
       ctx.drawImage(video, 0, 0, 32, 32)
       const data = ctx.getImageData(0, 0, 32, 32).data
       let red = 0
@@ -26,7 +27,7 @@ export const estimatePulse = async (
       await new Promise(resolve => setTimeout(resolve, 50))
     }
     const mean = samples.reduce((sum, sample) => sum + sample.r, 0) / samples.length
-    if (mean < 80) return {status: 'failed'}
+    if (mean < 80) return {status: 'failed', reason: 'poor-signal'}
     let best = {score: -Infinity, bpm: 0}
     for (let bpm = 45; bpm <= 180; bpm++) {
       const w = bpm / 60000 * Math.PI * 2
@@ -36,8 +37,13 @@ export const estimatePulse = async (
       if (score > best.score) best = {score, bpm}
     }
     return {status: 'estimated', bpm: best.bpm}
-  } catch {
-    return {status: 'failed'}
+  } catch (error) {
+    if (signal?.aborted) return {status: 'failed', reason: 'cancelled'}
+    if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
+      return {status: 'failed', reason: 'permission-denied'}
+    }
+    if (!navigator.mediaDevices?.getUserMedia) return {status: 'failed', reason: 'unavailable'}
+    return {status: 'failed', reason: 'timeout'}
   } finally {
     stream?.getTracks().forEach(track => track.stop())
     video.srcObject = null
