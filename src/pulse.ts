@@ -1,6 +1,10 @@
 export type PulseResult = {status: 'estimated'; bpm: number} | {status: 'failed'}
 
-export const estimatePulse = async (video: HTMLVideoElement, onProgress: (value: number) => void): Promise<PulseResult> => {
+export const estimatePulse = async (
+  video: HTMLVideoElement,
+  onProgress: (value: number) => void,
+  signal?: AbortSignal
+): Promise<PulseResult> => {
   let stream: MediaStream | undefined
   try {
     stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: false})
@@ -12,6 +16,7 @@ export const estimatePulse = async (video: HTMLVideoElement, onProgress: (value:
     const samples: {t: number; r: number}[] = []
     const started = performance.now()
     while (performance.now() - started < 15000) {
+      if (signal?.aborted) return {status: 'failed'}
       ctx.drawImage(video, 0, 0, 32, 32)
       const data = ctx.getImageData(0, 0, 32, 32).data
       let red = 0

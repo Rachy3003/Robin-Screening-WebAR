@@ -1,129 +1,40 @@
-<!DOCTYPE html>
-<html>
-
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-
-  <title>Meet Robin in AR</title>
-  <meta itemprop="name" content="Meet Robin in AR">
-  <meta name="twitter:title" content="Meet Robin in AR">
-  <meta property="og:title" content="Meet Robin in AR">
-  <meta property="og:site_name" content="Robin WebAR">
-  <meta name="description" content="Place Robin in your space and explore helpful health information.">
-  <meta itemprop="description" content="Place Robin in your space and explore helpful health information.">
-  <meta property="og:description" content="Place Robin in your space and explore helpful health information.">
-  <meta name="twitter:description" content="Place Robin in your space and explore helpful health information.">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Robin Screening Guide</title>
+  <meta name="description" content="Explore general health screenings with Robin.">
   <script crossorigin="anonymous" src="./external/runtime/runtime.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@8thwall/engine-binary@1/dist/xr.js" async crossorigin="anonymous" data-preload-chunks="slam"></script>
   <script src="https://cdn.jsdelivr.net/npm/@8thwall/landing-page@1/dist/landing-page.js" crossorigin="anonymous"></script>
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
   <style>
-    :root { --green: #00b67a; --ink: #073c31; --paper: #fff; }
-    * { box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
-    button { font: inherit; }
-    .ar-ui { position: fixed; inset: 0; z-index: 20; pointer-events: none; color: var(--ink); }
-    .speech { pointer-events: none; position: absolute; top: max(6.5rem, env(safe-area-inset-top)); left: 50%; transform: translate(-50%, -12px) scale(.94); min-width: min(310px, calc(100vw - 32px)); padding: 14px 58px 14px 22px; border: 4px solid var(--green); border-radius: 999px; background: var(--paper); font-weight: 750; font-size: clamp(20px, 5vw, 28px); text-align: center; opacity: 0; visibility: hidden; transition: opacity .25s ease, transform .25s ease, visibility .25s; box-shadow: 0 10px 34px #073c3130; }
-    .speech::after { content: ''; position: absolute; left: 50%; bottom: -17px; width: 25px; height: 25px; background: white; border-right: 4px solid var(--green); border-bottom: 4px solid var(--green); transform: translateX(-50%) rotate(45deg); }
-    .speech.is-visible { pointer-events: auto; opacity: 1; visibility: visible; transform: translate(-50%, 0) scale(1); }
-    .icon-button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: #e7f5f0; color: var(--ink); cursor: pointer; touch-action: manipulation; }
-    .icon-button:active { background: #cdece1; }
-    .icon-button:focus-visible, .card-body:focus-visible, .nav-button:focus-visible { outline: 3px solid #ffd54f; outline-offset: 3px; }
-    .speech__close { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); font-size: 25px; }
-    .store-panel { pointer-events: auto; position: absolute; left: 14px; right: 14px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 10px 12px 11px; border: 1px solid #dceae6; border-radius: 19px; background: #fffffff2; box-shadow: 0 10px 30px #073c3138; backdrop-filter: blur(10px); }
-    .store-panel__title { margin: 0 0 7px; color: var(--ink); font-size: 15px; font-weight: 800; line-height: 1.2; text-align: center; }
-    .store-links { display: flex; align-items: center; justify-content: center; gap: 10px; }
-    .store-link { display: block; width: min(43vw, 170px); height: 50px; overflow: hidden; border-radius: 8px; background: #000; }
-    .store-link img { display: block; position: relative; left: 50%; top: 50%; max-width: none; transform: translate(-50%, -50%); }
-    .store-link--apple img { width: 110%; }
-    .store-link--google img { width: 155%; }
-    .store-link:focus-visible { outline: 3px solid #ffd54f; outline-offset: 3px; }
-    .topic-card { pointer-events: none; position: absolute; z-index: 4; left: 16px; right: 16px; bottom: calc(max(118px, env(safe-area-inset-bottom)) + 18px); max-width: 480px; margin-inline: auto; padding: 14px; border: 1px solid #cfe3dc; border-radius: 24px; background: #fffffff7; box-shadow: 0 18px 46px #052c2452; opacity: 0; visibility: hidden; transform: translateY(18px) scale(.97); transition: opacity .25s ease, transform .25s ease, visibility .25s; backdrop-filter: blur(12px); }
-    .topic-card.is-visible { pointer-events: auto; opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
-    .topic-card__header { display: flex; align-items: center; gap: 10px; min-height: 44px; }
-    .topic-card__accent { width: 8px; height: 34px; flex: 0 0 auto; border-radius: 999px; background: var(--green); }
-    .topic-card__topic { flex: 1; margin: 0; color: var(--ink); font-size: 16px; font-weight: 850; letter-spacing: .02em; }
-    .card-body { position: relative; display: block; width: 100%; min-height: 156px; max-height: min(34vh, 270px); margin: 8px 0 10px; padding: 0; overflow: auto; border: 0; border-radius: 17px; background: #f3faf7; color: var(--ink); cursor: pointer; text-align: left; touch-action: manipulation; perspective: 900px; }
-    .card-body__inner { position: relative; display: grid; min-height: 156px; transition: transform .28s ease; transform-style: preserve-3d; }
-    .card-body.is-flipped .card-body__inner { transform: rotateY(180deg); }
-    .card-face { grid-area: 1 / 1; display: flex; flex-direction: column; justify-content: center; min-height: 156px; padding: 20px; overflow: auto; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-    .card-face--back { transform: rotateY(180deg); background: #fff; border-radius: 17px; }
-    .card-question { margin: 0 0 12px; font-size: clamp(19px, 4.8vw, 24px); line-height: 1.25; }
-    .card-answer { margin: 0 0 12px; font-size: 16px; line-height: 1.45; }
-    .card-hint { margin: auto 0 0; color: #526b65; font-size: 14px; font-weight: 700; }
-    .card-disclaimer { display: block; padding-top: 10px; border-top: 1px solid #dceae6; color: #526b65; font-size: 12px; line-height: 1.35; }
-    .topic-card__footer { display: grid; grid-template-columns: 52px 1fr 52px; align-items: center; gap: 8px; }
-    .nav-button { width: 52px; height: 44px; border: 0; border-radius: 12px; background: #e7f5f0; color: var(--ink); font-size: 24px; font-weight: 800; cursor: pointer; touch-action: manipulation; }
-    .nav-button:disabled { cursor: default; opacity: .38; }
-    .card-progress-wrap { text-align: center; }
-    .card-position { display: block; margin-bottom: 5px; color: #526b65; font-size: 12px; font-weight: 700; }
-    .card-progress { display: flex; justify-content: center; gap: 8px; }
-    .progress-dot { width: 8px; height: 8px; border-radius: 50%; background: #b7cac4; }
-    .progress-dot.is-active { background: var(--green); box-shadow: 0 0 0 3px #00b67a24; }
-    @media (max-width: 350px) {
-      .store-panel { left: 8px; right: 8px; padding-inline: 8px; }
-      .store-links { gap: 6px; }
-      .store-link { height: 45px; }
-      .topic-card { left: 8px; right: 8px; padding: 10px; }
-      .card-face { padding: 16px; }
-    }
-    @media (orientation: landscape) and (max-height: 520px) {
-      .store-panel { left: auto; width: min(390px, 47vw); }
-      .topic-card { left: 12px; right: auto; bottom: max(10px, env(safe-area-inset-bottom)); width: min(440px, 48vw); }
-      .card-body, .card-body__inner, .card-face { min-height: 116px; }
-      .card-body { max-height: 42vh; }
-    }
-    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } .card-body.is-flipped .card-body__inner { transform: none; } .card-body.is-flipped .card-face--front { visibility: hidden; } .card-body:not(.is-flipped) .card-face--back { visibility: hidden; } }
+    :root{--green:#00a878;--dark:#073c31;--paper:#fff;--muted:#526b65;--pulse-seconds:.8s}
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;color:var(--dark)}
+    button,input,a{font:inherit}.shell{position:fixed;inset:0;z-index:30;display:flex;align-items:flex-end;pointer-events:none}
+    .panel{pointer-events:auto;width:min(520px,calc(100% - 24px));max-height:72vh;overflow:auto;margin:12px auto max(12px,env(safe-area-inset-bottom));padding:22px;border:1px solid #d6e7e1;border-radius:26px;background:#fffffff5;box-shadow:0 18px 50px #052c2450;backdrop-filter:blur(14px)}
+    h1{margin:.2rem 0 .7rem;font-size:clamp(25px,7vw,38px);line-height:1.08}h2{margin:1rem 0 .2rem;font-size:17px}p{line-height:1.45}.eyebrow{margin:0;color:var(--green);font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+    button,.link{min-height:48px;border-radius:14px;cursor:pointer}.primary,.secondary{display:block;width:100%;margin-top:10px;padding:12px 16px;border:0;text-align:center;font-weight:800;text-decoration:none}
+    .primary{background:var(--green);color:#fff}.secondary{background:#e7f5f0;color:var(--dark)}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #ffd54f;outline-offset:3px}
+    .choices,.screening-list{display:grid;gap:9px}.choice,.screening{padding:13px;border:1px solid #c9dfd7;background:#fff;color:var(--dark);text-align:left}.screening span{display:block;margin-top:5px;color:var(--muted);font-size:14px;line-height:1.35}
+    .privacy,.source{color:var(--muted);font-size:12px}.chips{display:flex;gap:7px;flex-wrap:wrap}.chips button{min-height:40px;padding:8px 11px;border:1px solid #c9dfd7;background:#fff}
+    label{display:block;margin:14px 0 5px;font-weight:800}input{width:100%;min-height:48px;padding:10px;border:1px solid #9ebbb1;border-radius:12px}.answer{margin-top:12px;padding:14px;border-left:5px solid var(--green);background:#eef8f4;line-height:1.45}
+    progress{width:100%;height:18px}.pulse-camera{position:fixed;left:-9999px;width:64px;height:64px}
+    .fallback{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle,#e8fff7,#bfeadb)}
+    .fallback model-viewer{width:100%;height:68vh}.fallback::after{content:"";position:absolute;width:70px;height:70px;border:8px solid #00b67a55;border-radius:50%;animation:pulse var(--pulse-seconds) infinite ease-out}
+    .fallback[hidden]{display:none}@keyframes pulse{to{transform:scale(2);opacity:0}}
+    body[data-robin-mode="3d"] canvas{visibility:hidden}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   </style>
 </head>
-
 <body>
-  <main class="ar-ui" aria-live="polite">
-    <div id="robin-speech" class="speech">
-      <span>How can I help?</span>
-      <button id="speech-close" class="icon-button speech__close" type="button" aria-label="Close greeting">×</button>
-    </div>
-    <section id="topic-card" class="topic-card" aria-hidden="true" aria-label="Robin health topics">
-      <header class="topic-card__header">
-        <span id="card-accent" class="topic-card__accent" aria-hidden="true"></span>
-        <p id="card-topic" class="topic-card__topic"></p>
-        <button id="card-close" class="icon-button" type="button" aria-label="Close health topics">×</button>
-      </header>
-      <button id="topic-card-body" class="card-body" type="button" aria-pressed="false" aria-label="Reveal answer">
-        <span class="card-body__inner">
-          <span class="card-face card-face--front">
-            <strong id="card-question" class="card-question"></strong>
-            <span class="card-hint">Tap to reveal answer</span>
-          </span>
-          <span class="card-face card-face--back">
-            <span id="card-answer" class="card-answer"></span>
-            <small class="card-disclaimer">General health information only—not a substitute for professional medical advice.</small>
-          </span>
-        </span>
-      </button>
-      <footer class="topic-card__footer">
-        <button id="card-previous" class="nav-button" type="button" aria-label="Previous topic">‹</button>
-        <div class="card-progress-wrap">
-          <span id="card-position" class="card-position" aria-live="polite"></span>
-          <div id="card-progress" class="card-progress" aria-label="Topic progress"></div>
-        </div>
-        <button id="card-next" class="nav-button" type="button" aria-label="Next topic">›</button>
-      </footer>
-    </section>
-    <aside class="store-panel" aria-label="Download the HealthHub app">
-      <p class="store-panel__title">Download the HealthHub app</p>
-      <div class="store-links">
-        <a class="store-link store-link--apple" href="https://apps.apple.com/sg/app/healthhub-sg/id1034200875" aria-label="Download HealthHub on the Apple App Store">
-          <img src="./assets/apple-app-store.png" alt="Download on the App Store">
-        </a>
-        <a class="store-link store-link--google" href="https://play.google.com/store/apps/details?id=sg.gov.hpb.healthhub&amp;pli=1" aria-label="Get HealthHub on Google Play">
-          <img src="./assets/google-play.png" alt="Get it on Google Play">
-        </a>
-      </div>
-    </aside>
-  </main>
+  <div id="robin-3d" class="fallback" hidden aria-label="Screen-based 3D Robin">
+    <model-viewer src="./assets/robin.glb" alt="Robin, the HealthHub guide" camera-controls auto-rotate interaction-prompt="none"></model-viewer>
+  </div>
+  <video id="pulse-video" class="pulse-camera" playsinline muted aria-hidden="true"></video>
+  <div class="shell">
+    <main id="journey" class="panel" tabindex="-1" aria-live="polite"></main>
+  </div>
   <script src="bundle.js"></script>
-
 </body>
-
 </html>
