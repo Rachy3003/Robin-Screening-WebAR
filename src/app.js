@@ -24,8 +24,11 @@ const validateCampaign = campaign => {
 }
 validateCampaign(CAMPAIGN)
 
-const variant = sessionStorage.getItem('robin-variant') ||
-  (crypto.getRandomValues(new Uint8Array(1))[0] % 2 ? 'ar' : '3d')
+const requestedVariant = new URLSearchParams(window.location.search).get('variant')
+const variant = (requestedVariant === 'ar' || requestedVariant === '3d')
+  ? requestedVariant
+  : sessionStorage.getItem('robin-variant') ||
+    (crypto.getRandomValues(new Uint8Array(1))[0] % 2 ? 'ar' : '3d')
 sessionStorage.setItem('robin-variant', variant)
 document.body.dataset.variant = variant
 track('Session Start', {variant})
