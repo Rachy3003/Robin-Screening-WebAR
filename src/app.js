@@ -6,11 +6,14 @@ const $ = selector => document.querySelector(selector)
 const ui = $('#journey')
 const fallback = $('#robin-3d')
 const pulseVideo = $('#pulse-video')
+const simulatorPanel = $('#simulator')
 const answers = {}
 let state = 'intro'
 let pulseBpm = null
 let pulseAbort = null
 let pulseCancelled = false
+const simulatorEnabled = new URLSearchParams(window.location.search).get('simulator') === '1'
+const simulatorEvents = []
 
 const validateCampaign = campaign => {
   if (!campaign.id || !campaign.version || !campaign.verified || !campaign.officialUrl) throw new Error('Campaign metadata is incomplete')
@@ -40,12 +43,14 @@ const escapeHtml = value => String(value).replace(/[&<>"']/g, char => (
 const render = html => {
   ui.innerHTML = html
   ui.focus({preventScroll: true})
+  renderSimulator()
 }
 
 const setRobinMode = mode => {
   document.body.dataset.robinMode = mode
   fallback.hidden = mode !== '3d'
   track('Robin Visible', {variant, capability: mode})
+  renderSimulator()
 }
 
 const pauseAr = async () => {
@@ -121,10 +126,11 @@ const startPulse = async () => {
   pulseAbort = null
   if (state !== 'pulse') return
   await resumeAr()
-  if (pulseCancelled) {
-    track('Pulse Failed', {variant, outcome: 'cancelled'})
-    return showQuestion(0)
-  }
+  if (pulseCancelled) return finishPulse({status: 'failed'}, 'cancelled')
+  finishPulse(result, result.status === 'estimated' ? 'estimated' : 'failed')
+}
+
+const finishPulse = (result, outcome) => {
   if (result.status === 'estimated') {
     pulseBpm = result.bpm
     track('Pulse Completed', {variant, outcome: 'estimated'})
@@ -137,7 +143,8 @@ const startPulse = async () => {
       <button class="primary" data-action="questions">Explore screenings</button>
     `)
   } else {
-    track('Pulse Failed', {variant, outcome: 'failed'})
+    track('Pulse Failed', {variant, outcome})
+    if (outcome === 'cancelled') return showQuestion(0)
     render(`
       <p class="eyebrow">No reliable estimate</p>
       <h1>Let’s continue</h1>
@@ -233,6 +240,61 @@ const answerQuestion = query => {
   track(match ? 'Intent Matched' : 'Intent Unmatched', {variant, outcome: match ? 'matched' : 'unmatched'})
   showAsk(match?.answer || 'I can’t confirm that safely. Try asking about cost, MediSave, preparation, results, or where to go—or verify it through official HealthHub guidance.')
 }
+
+function renderSimulator() {
+  if (!simulatorEnabled || !simulatorPanel) return
+  simulatorPanel.hidden = false
+  const eventText = simulatorEvents.slice(-8).map(event => `${event.name} ${JSON.stringify(event.props)}`).join('\n')
+  simulatorPanel.innerHTML = `
+    <div class="simulator__head"><h2>Robin Simulator</h2><button data-sim="collapse" aria-label="Collapse simulator">−</button></div>
+    <p><strong>State:</strong> ${escapeHtml(state)}<br><strong>Mode:</strong> ${escapeHtml(document.body.dataset.robinMode || '')}<br><strong>Variant:</strong> ${variant}<br><strong>Pulse:</strong> ${pulseBpm || 'none'}<br><strong>Answers:</strong> ${escapeHtml(JSON.stringify(answers))}</p>
+    <div class="simulator__grid">
+      <button data-sim="ar">AR mode</button><button data-sim="3d">3D mode</button>
+      <button data-sim="ready">AR ready</button><button data-sim="lost">Tracking lost</button>
+      <button data-sim="recovered">Recovery success</button><button data-sim="recovery-failed">Recovery failed</button>
+      <select id="sim-bpm" aria-label="Simulated BPM"><option>60</option><option selected>72</option><option>90</option><option>120</option></select>
+      <button data-sim="pulse-success">Pulse success</button>
+      <button data-sim="poor-signal">Poor signal</button><button data-sim="denied">Permission denied</button>
+      <button data-sim="cancelled">Pulse cancelled</button><button data-sim="timeout">Pulse timeout</button>
+      <button data-sim="reset">Reset session</button>
+    </div>
+    <pre aria-label="Simulator event log">${escapeHtml(eventText || 'No events yet')}</pre>
+  `
+}
+
+const resetSimulation = () => {
+  Object.keys(answers).forEach(key => delete answers[key])
+  pulseBpm = null
+  simulatorEvents.length = 0
+  state = 'intro'
+  setRobinMode(variant)
+  showIntro()
+}
+
+simulatorPanel?.addEventListener('click', event => {
+  const control = event.target.closest('[data-sim]')
+  if (!control) return
+  const action = control.dataset.sim
+  if (action === 'collapse') simulatorPanel.classList.toggle('is-collapsed')
+  if (action === 'ar' || action === 'ready' || action === 'recovered') setRobinMode('ar')
+  if (action === '3d' || action === 'lost' || action === 'recovery-failed') setRobinMode('3d')
+  if (action === 'pulse-success') {
+    state = 'pulse'
+    finishPulse({status: 'estimated', bpm: Number($('#sim-bpm')?.value || 72)}, 'estimated')
+  }
+  if (['poor-signal', 'denied', 'cancelled', 'timeout'].includes(action)) {
+    state = 'pulse'
+    finishPulse({status: 'failed'}, action)
+  }
+  if (action === 'reset') resetSimulation()
+  renderSimulator()
+})
+
+window.addEventListener('robin-analytics', event => {
+  if (!simulatorEnabled) return
+  simulatorEvents.push(event.detail)
+  renderSimulator()
+})
 
 ui.addEventListener('click', event => {
   const target = event.target.closest('button, a')

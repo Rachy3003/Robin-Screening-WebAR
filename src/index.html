@@ -25,6 +25,8 @@
     .fallback model-viewer{width:100%;height:68vh}.fallback::after{content:"";position:absolute;width:70px;height:70px;border:8px solid #00b67a55;border-radius:50%;animation:pulse var(--pulse-seconds) infinite ease-out}
     .fallback[hidden]{display:none}@keyframes pulse{to{transform:scale(2);opacity:0}}
     body[data-robin-mode="3d"] canvas{visibility:hidden}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+    .simulator{position:fixed;z-index:80;top:max(8px,env(safe-area-inset-top));left:8px;width:min(330px,calc(100vw - 16px));max-height:56vh;overflow:auto;padding:12px;border:2px solid #6941c6;border-radius:16px;background:#161225ed;color:#fff;font-size:12px;box-shadow:0 12px 40px #0008}
+    .simulator[hidden]{display:none}.simulator h2{margin:0;font-size:15px}.simulator__grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.simulator button,.simulator select{min-height:36px;padding:6px;border:1px solid #8f7ad0;border-radius:8px;background:#2c2347;color:#fff}.simulator pre{white-space:pre-wrap;margin:8px 0 0;padding:8px;border-radius:8px;background:#0d0a17;color:#d9cffb;max-height:110px;overflow:auto}.simulator.is-collapsed>*:not(.simulator__head){display:none}.simulator__head{display:flex;align-items:center;justify-content:space-between}.simulator__head button{min-height:32px}
   </style>
 </head>
 <body>
@@ -32,6 +34,7 @@
     <model-viewer src="./assets/robin.glb" alt="Robin, the HealthHub guide" camera-controls auto-rotate interaction-prompt="none"></model-viewer>
   </div>
   <video id="pulse-video" class="pulse-camera" playsinline muted aria-hidden="true"></video>
+  <aside id="simulator" class="simulator" hidden aria-label="Robin journey simulator"></aside>
   <div class="shell">
     <main id="journey" class="panel" tabindex="-1" aria-live="polite"></main>
   </div>
