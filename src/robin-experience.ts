@@ -9,6 +9,8 @@ type GestureState = {
   lastX: number
   lastY: number
   dragging: boolean
+  pickedUp: boolean
+  longPressTimer?: ReturnType<typeof setTimeout>
 }
 
 type InputListener = (event: any) => void
@@ -26,7 +28,7 @@ type ExperienceInstance = {
 }
 
 const DRAG_THRESHOLD = 0.018
-const ROTATION_RADIANS_PER_SCREEN = 6
+const LONG_PRESS_MS = 600
 const instances = new Map<bigint, ExperienceInstance>()
 
 const findRotationTarget = (world: ecs.World, root: bigint) => {
@@ -64,7 +66,15 @@ const beginGesture = (instance: ExperienceInstance, event: ecs.ScreenTouchStartE
     lastX: event.position.x,
     lastY: event.position.y,
     dragging: false,
+    pickedUp: false,
   }
+  instance.gesture.longPressTimer = setTimeout(() => {
+    const gesture = instance.gesture
+    if (!gesture || gesture.dragging) return
+    gesture.pickedUp = true
+    window.dispatchEvent(new CustomEvent('robin-pickup-start'))
+    setTimeout(() => window.dispatchEvent(new CustomEvent('robin-reposition-request')), 180)
+  }, LONG_PRESS_MS)
 }
 
 const updateGesture = (
@@ -77,14 +87,10 @@ const updateGesture = (
 
   const totalX = event.position.x - gesture.startX
   const totalY = event.position.y - gesture.startY
-  if (Math.hypot(totalX, totalY) >= DRAG_THRESHOLD) gesture.dragging = true
-  if (!gesture.dragging) return
-
-  const deltaX = event.position.x - gesture.lastX
-  world.transform.rotateSelf(
-    instance.rotationTarget,
-    ecs.math.quat.yRadians(deltaX * ROTATION_RADIANS_PER_SCREEN)
-  )
+  if (Math.hypot(totalX, totalY) >= DRAG_THRESHOLD) {
+    gesture.dragging = true
+    clearTimeout(gesture.longPressTimer)
+  }
   gesture.lastX = event.position.x
   gesture.lastY = event.position.y
 }
@@ -92,7 +98,8 @@ const updateGesture = (
 const endGesture = (instance: ExperienceInstance, event: ecs.ScreenTouchEndEvent) => {
   const gesture = instance.gesture
   if (!gesture || event.pointerId !== gesture.pointerId) return
-  if (!gesture.dragging && event.endTarget === instance.tapTarget) {
+  clearTimeout(gesture.longPressTimer)
+  if (!gesture.dragging && !gesture.pickedUp && event.endTarget === instance.tapTarget) {
     window.dispatchEvent(new CustomEvent('robin-open-cards'))
   }
   instance.gesture = undefined
@@ -146,6 +153,7 @@ ecs.registerComponent({
     world.events.addListener(world.events.globalId, ecs.input.SCREEN_TOUCH_END, instance.endListener)
     window.addEventListener('robin-rotate', instance.rotateListener)
     window.addEventListener('robin-calculator-cue', instance.cueListener)
+    window.addEventListener('robin-pickup-start', instance.cueListener)
 
     const position = ecs.math.vec3.zero()
     world.transform.getLocalPosition(component.eid, position)
@@ -174,6 +182,8 @@ ecs.registerComponent({
     world.events.removeListener(world.events.globalId, ecs.input.SCREEN_TOUCH_END, instance.endListener)
     window.removeEventListener('robin-rotate', instance.rotateListener)
     window.removeEventListener('robin-calculator-cue', instance.cueListener)
+    window.removeEventListener('robin-pickup-start', instance.cueListener)
+    clearTimeout(instance.gesture?.longPressTimer)
     world.deleteEntity(instance.tapTarget)
     instances.delete(component.eid)
   },

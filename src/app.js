@@ -10,6 +10,7 @@ const fallbackModel = fallback?.querySelector('model-viewer')
 const statusRegion = $('#journey-status')
 const robinControls = $('#robin-controls')
 const arFallbackButton = $('#ar-fallback')
+const arToggle = $('#ar-toggle')
 const simulatorPanel = $('#simulator')
 const answers = {}
 const calculator = {adult: null, profile: null, age: 35, ageBand: '30-59', heightCm: 168, weightKg: 65, activity: null}
@@ -80,6 +81,11 @@ const setRobinMode = (mode, source = 'assigned') => {
   document.body.dataset.robinMode = mode
   fallback.hidden = mode !== '3d'
   if (mode === '3d') loadModelViewer()
+  if (arToggle) {
+    const enabled = mode === 'ar'
+    arToggle.setAttribute('aria-pressed', String(enabled))
+    arToggle.setAttribute('aria-label', enabled ? 'AR is on. Switch to screen-based 3D' : 'AR is off. Place Robin in my space')
+  }
   track('Robin Visible', {variant, capability: mode, source})
   renderSimulator()
 }
@@ -94,6 +100,7 @@ const render = (html, options = {}) => {
   shell.hidden = false
   stopIdlePrompts()
   ui.innerHTML = `${html}<div class="panel-tools"><button data-action="mode-menu" aria-label="Experience options">•••</button><button data-action="close" aria-label="Close and see Robin">×</button></div>`
+  requestAnimationFrame(updateViewportLayout)
   if (focus) {
     const heading = ui.querySelector('h1')
     if (heading) {
@@ -102,6 +109,13 @@ const render = (html, options = {}) => {
     }
   }
   renderSimulator()
+}
+
+const updateViewportLayout = () => {
+  const height = window.visualViewport?.height || window.innerHeight
+  document.documentElement.style.setProperty('--visual-height', `${height}px`)
+  const sheetHeight = shell.hidden ? 0 : Math.min(ui.getBoundingClientRect().height, height * .78)
+  document.documentElement.style.setProperty('--sheet-height', `${sheetHeight}px`)
 }
 
 const stopIdlePrompts = () => {
@@ -175,9 +189,32 @@ const showModeMenu = () => {
   `, {surface: 'conversation'})
 }
 
+const preserveJourney = () => {
+  if (shell.hidden || state === 'mode-menu') return
+  closedState = state
+  closedMarkup = ui.innerHTML
+  closedPanelClass = ui.className
+}
+
+const switchRobinMode = mode => {
+  preserveJourney()
+  if (mode === '3d') {
+    try { if (window.XR8 && !XR8.isPaused()) XR8.pause() } catch (_) {}
+    setRobinMode('3d', 'user-selected')
+    setStatus('Screen-based 3D is on')
+    if (closedMarkup) resumeJourney()
+    requestAnimationFrame(updateViewportLayout)
+    return
+  }
+  setRobinMode('ar', 'user-selected')
+  try { if (window.XR8?.isPaused()) XR8.resume() } catch (_) {}
+  showScanning()
+}
+
 const hideJourney = () => {
   shell.hidden = true
   ui.innerHTML = ''
+  requestAnimationFrame(updateViewportLayout)
 }
 
 const showUnavailable = () => {
@@ -323,7 +360,7 @@ const showAgeBand = () => {
     <p>Turn the dial once. Robin will use it for both calculations and screening guidance.</p>
     <div class="weight-instrument">
       ${instrumentButton('age', -1, 'Decrease age by one year')}
-      <div class="weight-dial" role="slider" tabindex="0" aria-label="Age in years" aria-valuemin="18" aria-valuemax="100" aria-valuenow="${calculator.age}" style="--dial-angle:${-125 + ((calculator.age - 18) / 82) * 250}deg">
+      <div id="age-dial" class="weight-dial" data-dial-field="age" role="slider" tabindex="0" aria-label="Age in years" aria-valuemin="18" aria-valuemax="100" aria-valuenow="${calculator.age}" style="--dial-angle:${-125 + ((calculator.age - 18) / 82) * 250}deg">
         <div class="dial-ticks" aria-hidden="true"></div><i aria-hidden="true"></i>
         <output><strong>${calculator.age}</strong><span>years</span></output>
       </div>
@@ -332,6 +369,7 @@ const showAgeBand = () => {
     <button class="primary" data-action="calculator-height">Continue</button>
     ${calculatorBack('calculator-profile')}
   `)
+  bindInstruments()
 }
 
 const instrumentButton = (field, direction, label) => `<button class="instrument-step" data-adjust="${field}" data-direction="${direction}" aria-label="${label}">${direction < 0 ? '−' : '+'}</button>`
@@ -368,7 +406,7 @@ const showWeightDial = () => {
     <p>Drag around the dial until it shows your weight.</p>
     <div class="weight-instrument">
       ${instrumentButton('weightKg', -1, 'Decrease weight by one kilogram')}
-      <div id="weight-dial" class="weight-dial" role="slider" tabindex="0" aria-label="Weight in kilograms" aria-valuemin="25" aria-valuemax="250" aria-valuenow="${calculator.weightKg}" style="--dial-angle:${weightRotation(calculator.weightKg)}deg">
+      <div id="weight-dial" class="weight-dial" data-dial-field="weightKg" role="slider" tabindex="0" aria-label="Weight in kilograms" aria-valuemin="25" aria-valuemax="250" aria-valuenow="${calculator.weightKg}" style="--dial-angle:${weightRotation(calculator.weightKg)}deg">
         <div class="dial-ticks" aria-hidden="true"></div><i aria-hidden="true"></i>
         <output id="weight-output"><strong>${calculator.weightKg}</strong><span>kg</span></output>
       </div>
@@ -457,7 +495,11 @@ const updateInstrument = (field, value) => {
   calculator[field] = Math.max(limits.min, Math.min(limits.max, Math.round(Number(value))))
   if (field === 'age') {
     calculator.ageBand = calculator.age < 30 ? '18-29' : calculator.age < 60 ? '30-59' : '60+'
-    showAgeBand()
+    const dial = $('#age-dial')
+    dial?.style.setProperty('--dial-angle', `${-125 + ((calculator.age - 18) / 82) * 250}deg`)
+    dial?.setAttribute('aria-valuenow', calculator.age)
+    const output = dial?.querySelector('output strong')
+    if (output) output.textContent = calculator.age
     return
   }
   const output = field === 'heightCm' ? $('#height-output') : $('#weight-output')
@@ -475,7 +517,7 @@ const updateInstrument = (field, value) => {
 const bindInstruments = () => {
   instrumentCleanup?.()
   const height = $('#height-control')
-  const dial = $('#weight-dial')
+  const dial = $('[data-dial-field]')
   const cleanups = []
   if (height) {
     const onInput = () => updateInstrument('heightCm', height.value)
@@ -483,21 +525,24 @@ const bindInstruments = () => {
     cleanups.push(() => height.removeEventListener('input', onInput))
   }
   if (dial) {
+    const field = dial.dataset.dialField
+    const limits = field === 'age' ? {min: 18, max: 100} : CALCULATOR_RULES.limits.weight
     const setFromPointer = event => {
       const rect = dial.getBoundingClientRect()
       const degrees = Math.atan2(event.clientY - (rect.top + rect.height / 2), event.clientX - (rect.left + rect.width / 2)) * 180 / Math.PI + 90
       const normalized = Math.max(-125, Math.min(125, degrees > 180 ? degrees - 360 : degrees))
-      updateInstrument('weightKg', 25 + ((normalized + 125) / 250) * 225)
+      updateInstrument(field, limits.min + ((normalized + 125) / 250) * (limits.max - limits.min))
     }
-    const move = event => { if (dial.hasPointerCapture(event.pointerId)) setFromPointer(event) }
-    const down = event => { dial.setPointerCapture(event.pointerId); setFromPointer(event) }
+    const move = event => { if (dial.hasPointerCapture(event.pointerId)) { event.preventDefault(); setFromPointer(event) } }
+    const down = event => { event.preventDefault(); dial.setPointerCapture(event.pointerId); setFromPointer(event) }
+    const release = event => { if (dial.hasPointerCapture(event.pointerId)) dial.releasePointerCapture(event.pointerId) }
     const key = event => {
       if (!['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp'].includes(event.key)) return
       event.preventDefault()
-      updateInstrument('weightKg', calculator.weightKg + (['ArrowRight', 'ArrowUp'].includes(event.key) ? 1 : -1))
+      updateInstrument(field, calculator[field] + (['ArrowRight', 'ArrowUp'].includes(event.key) ? 1 : -1))
     }
-    dial.addEventListener('pointerdown', down); dial.addEventListener('pointermove', move); dial.addEventListener('keydown', key)
-    cleanups.push(() => { dial.removeEventListener('pointerdown', down); dial.removeEventListener('pointermove', move); dial.removeEventListener('keydown', key) })
+    dial.addEventListener('pointerdown', down); dial.addEventListener('pointermove', move); dial.addEventListener('pointerup', release); dial.addEventListener('pointercancel', release); dial.addEventListener('keydown', key)
+    cleanups.push(() => { dial.removeEventListener('pointerdown', down); dial.removeEventListener('pointermove', move); dial.removeEventListener('pointerup', release); dial.removeEventListener('pointercancel', release); dial.removeEventListener('keydown', key) })
   }
   instrumentCleanup = () => cleanups.forEach(cleanup => cleanup())
 }
@@ -645,6 +690,7 @@ const renderSimulator = () => {
     <div class="simulator__grid">
       <button data-sim="loading">Loading</button><button data-sim="scanning">Scanning</button>
       <button data-sim="ready">Ready to place</button><button data-sim="placed">Placed</button>
+      <button data-sim="pickup">Long-press pickup</button><button data-sim="toggle-mode">Toggle AR / 3D</button>
       <button data-sim="model-failed">Model failure</button><button data-sim="lost">Tracking lost</button>
       <button data-sim="recovered">Recovery success</button><button data-sim="recovery-failed">3D fallback</button>
       <button data-sim="calculator-offer">Calculator offer</button><button data-sim="adult">Adult check</button>
@@ -669,6 +715,8 @@ simulatorPanel?.addEventListener('click', event => {
   if (action === 'scanning') showScanning()
   if (action === 'ready') showReadyToPlace()
   if (action === 'placed') showPlaced()
+  if (action === 'pickup') window.dispatchEvent(new CustomEvent('robin-pickup-start'))
+  if (action === 'toggle-mode') switchRobinMode(document.body.dataset.robinMode === 'ar' ? '3d' : 'ar')
   if (action === 'lost') setStatus('Tracking lost. Move slowly back toward the surface.', 'warning')
   if (action === 'recovered') { setRobinMode('ar', 'tracking-recovery'); setStatus('Tracking restored') }
   if (action === 'recovery-failed') { setRobinMode('3d', 'tracking-recovery'); setStatus('Continuing in screen-based 3D', 'warning') }
@@ -746,16 +794,7 @@ ui.addEventListener('click', event => {
   if (target.dataset.screeningPage) showScreening(target.dataset.screeningPage, Number(target.dataset.page))
   if (target.dataset.action === 'screening-back') showScreening(target.dataset.screeningId, screeningPage - 1)
   if (target.dataset.mode) {
-    const mode = target.dataset.mode
-    if (mode === '3d') {
-      try { if (window.XR8 && !XR8.isPaused()) XR8.pause() } catch (_) {}
-      setRobinMode('3d', 'user-selected')
-      resumeJourney()
-    } else {
-      setRobinMode('ar', 'user-selected')
-      try { if (window.XR8?.isPaused()) XR8.resume() } catch (_) {}
-      showScanning()
-    }
+    switchRobinMode(target.dataset.mode)
   }
   if (target.dataset.query) answerQuestion(target.dataset.query)
   if (target.dataset.adjust) updateInstrument(target.dataset.adjust, calculator[target.dataset.adjust] + Number(target.dataset.direction))
@@ -792,6 +831,13 @@ spatialPrompt?.addEventListener('click', event => {
 window.addEventListener('robin-placed', showPlaced)
 window.addEventListener('robin-reality-ready', showReadyToPlace)
 window.addEventListener('robin-placement-missed', showPlacementMissed)
+window.addEventListener('robin-pickup-start', () => {
+  preserveJourney()
+  hideJourney()
+  setStatus('Robin picked up — move your phone, then tap a surface to place him')
+  announce('Robin picked up. Tap a surface to place him.')
+  track('Robin Picked Up', {variant})
+})
 window.addEventListener('robin-open-cards', () => {
   if (['scanning', 'ready-to-place', 'placed'].includes(state)) return
   resumeJourney()
@@ -828,6 +874,15 @@ robinControls?.addEventListener('click', event => {
   }
   window.dispatchEvent(new CustomEvent('robin-rotate', {detail: {direction}}))
 })
+
+arToggle?.addEventListener('click', () => {
+  switchRobinMode(document.body.dataset.robinMode === 'ar' ? '3d' : 'ar')
+})
+
+window.visualViewport?.addEventListener('resize', updateViewportLayout)
+window.visualViewport?.addEventListener('scroll', updateViewportLayout)
+window.addEventListener('resize', updateViewportLayout)
+new ResizeObserver(updateViewportLayout).observe(ui)
 
 fallbackModel?.addEventListener('load', () => {
   if (state !== 'model-loading') return
