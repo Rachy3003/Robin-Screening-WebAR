@@ -3,9 +3,7 @@ export const CAMPAIGN = {
   version: '2026-07-16',
   verified: '2026-07-16',
   questions: [
-    {id: 'age', label: 'What is your age group?', options: ['18–24', '25–39', '40–49', '50+']},
     {id: 'recent', label: 'Have you had a general health screening recently?', options: ['Yes', 'No', 'I’m not sure']},
-    {id: 'support', label: 'Show cost and support information for:', options: ['Singapore Citizen', 'Permanent Resident', 'General information']},
   ],
   screenings: [
     {id: 'measurements', minAge: 18, title: 'Body measurements', why: 'Body measurements can help build a broader picture of health.', check: 'Height, weight, BMI and waist circumference.', expect: 'Simple measurements taken while standing.', support: 'General screening packages are usually not MediSave-claimable. Ask the provider about current subsidies.'},
@@ -16,4 +14,4 @@ export const CAMPAIGN = {
   officialUrl: 'https://www.healthhub.sg/programmes/healthiersg-screening/screening-journey',
 }
 
-export const ageFloor = (value: string) => ({'18–24': 18, '25–39': 25, '40–49': 40, '50+': 50}[value] || 18)
+export const ageFloor = (value: string | number) => Number(value) || 18

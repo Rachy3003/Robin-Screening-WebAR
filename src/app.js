@@ -12,7 +12,13 @@ const robinControls = $('#robin-controls')
 const arFallbackButton = $('#ar-fallback')
 const simulatorPanel = $('#simulator')
 const answers = {}
-const calculator = {adult: null, profile: null, ageBand: null, heightCm: 168, weightKg: 65, activity: null}
+const calculator = {adult: null, profile: null, age: 35, ageBand: '30-59', heightCm: 168, weightKg: 65, activity: null}
+const spatialPrompt = $('#spatial-prompt')
+let closedState = null
+let closedMarkup = ''
+let closedPanelClass = ''
+let idleTimers = []
+let screeningPage = 0
 let state = 'loading'
 let questionIndex = 0
 let questionsTracked = false
@@ -41,7 +47,7 @@ const escapeHtml = value => String(value).replace(/[&<>"']/g, char => (
 
 const validateCampaign = campaign => {
   if (!campaign.id || !campaign.version || !campaign.verified || !campaign.officialUrl) throw new Error('Campaign metadata is incomplete')
-  if (!Array.isArray(campaign.questions) || campaign.questions.length !== 3) throw new Error('Campaign questions are invalid')
+  if (!Array.isArray(campaign.questions) || !campaign.questions.length) throw new Error('Campaign questions are invalid')
   if (!Array.isArray(campaign.screenings) || !campaign.screenings.length) throw new Error('Campaign screenings are invalid')
 }
 
@@ -86,7 +92,8 @@ const render = (html, options = {}) => {
   }
   ui.className = `panel panel--${surface}`
   shell.hidden = false
-  ui.innerHTML = html
+  stopIdlePrompts()
+  ui.innerHTML = `${html}<div class="panel-tools"><button data-action="mode-menu" aria-label="Experience options">•••</button><button data-action="close" aria-label="Close and see Robin">×</button></div>`
   if (focus) {
     const heading = ui.querySelector('h1')
     if (heading) {
@@ -95,6 +102,77 @@ const render = (html, options = {}) => {
     }
   }
   renderSimulator()
+}
+
+const stopIdlePrompts = () => {
+  idleTimers.forEach(clearTimeout)
+  idleTimers = []
+  if (spatialPrompt) spatialPrompt.hidden = true
+}
+
+const showPrompt = (step) => {
+  if (!spatialPrompt || !shell.hidden) return
+  const prompts = [
+    `<p>How can I help?</p><button class="primary" data-prompt="ask">Ask Robin a question</button>`,
+    `<p>Would you like to explore HealthHub?</p><a class="primary link" href="https://www.healthhub.sg/" target="_blank" rel="noopener">Visit HealthHub</a>`,
+    `<p>Take HealthHub with you</p><div class="store-links"><a href="https://apps.apple.com/sg/app/healthhub-sg/id1034200875"><img src="./assets/apple-app-store.png" alt="Download on the App Store"></a><a href="https://play.google.com/store/apps/details?id=sg.gov.hpb.healthhub"><img src="./assets/google-play.png" alt="Get it on Google Play"></a></div>`,
+  ]
+  spatialPrompt.innerHTML = prompts[step]
+  spatialPrompt.hidden = false
+}
+
+const startIdlePrompts = () => {
+  stopIdlePrompts()
+  const sequence = []
+  for (let loop = 0; loop < 2; loop++) {
+    const base = 3000 + loop * 25000
+    sequence.push([base, 0], [base + 3000, 1], [base + 6000, 2], [base + 12000, -1])
+  }
+  sequence.forEach(([delay, step]) => idleTimers.push(setTimeout(() => {
+    if (!shell.hidden) return
+    if (step < 0) spatialPrompt.hidden = true
+    else showPrompt(step)
+  }, simulatorEnabled ? Math.max(150, delay / 12) : delay)))
+}
+
+const closeJourney = () => {
+  closedState = state
+  closedMarkup = ui.innerHTML
+  closedPanelClass = ui.className
+  hideJourney()
+  setStatus('Photo mode — tap Robin to resume')
+  startIdlePrompts()
+  track('Journey Closed', {variant, state: closedState})
+}
+
+const resumeJourney = () => {
+  stopIdlePrompts()
+  setStatus('')
+  if (closedMarkup) {
+    ui.innerHTML = closedMarkup
+    ui.className = closedPanelClass
+  }
+  shell.hidden = false
+  announce('Resumed where you left off')
+}
+
+const showModeMenu = () => {
+  const current = document.body.dataset.robinMode || 'ar'
+  if (!closedMarkup || state !== 'mode-menu') {
+    closedState = state
+    closedMarkup = ui.innerHTML
+    closedPanelClass = ui.className
+  }
+  state = 'mode-menu'
+  render(`
+    <p class="eyebrow">Experience options</p><h1>Choose how Robin appears</h1>
+    <p>Your progress will stay exactly where it is.</p>
+    <div class="mode-menu">
+      <button class="primary" data-mode="${current === 'ar' ? '3d' : 'ar'}">${current === 'ar' ? 'Use screen-based 3D' : 'Place Robin in my space'}</button>
+      ${current === 'ar' ? '<button class="secondary" data-action="move-robin">Move Robin</button>' : ''}
+      <button class="secondary" data-action="resume">Back</button>
+    </div>
+  `, {surface: 'conversation'})
 }
 
 const hideJourney = () => {
@@ -241,10 +319,17 @@ const showAgeBand = () => {
   state = 'calculator-age'
   render(`
     ${calculatorProgress(3)}
-    <h1>What is your age group?</h1>
-    <div class="choices">
-      ${[['18-29', '18–29'], ['30-59', '30–59'], ['60+', '60+']].map(([value, label]) => `<button class="choice${calculator.ageBand === value ? ' is-selected' : ''}" data-calc="ageBand" data-value="${value}" aria-pressed="${calculator.ageBand === value}">${label}</button>`).join('')}
+    <h1>Set your age</h1>
+    <p>Turn the dial once. Robin will use it for both calculations and screening guidance.</p>
+    <div class="weight-instrument">
+      ${instrumentButton('age', -1, 'Decrease age by one year')}
+      <div class="weight-dial" role="slider" tabindex="0" aria-label="Age in years" aria-valuemin="18" aria-valuemax="100" aria-valuenow="${calculator.age}" style="--dial-angle:${-125 + ((calculator.age - 18) / 82) * 250}deg">
+        <div class="dial-ticks" aria-hidden="true"></div><i aria-hidden="true"></i>
+        <output><strong>${calculator.age}</strong><span>years</span></output>
+      </div>
+      ${instrumentButton('age', 1, 'Increase age by one year')}
     </div>
+    <button class="primary" data-action="calculator-height">Continue</button>
     ${calculatorBack('calculator-profile')}
   `)
 }
@@ -368,8 +453,13 @@ const showCalculatorFailure = () => {
 }
 
 const updateInstrument = (field, value) => {
-  const limits = field === 'heightCm' ? CALCULATOR_RULES.limits.height : CALCULATOR_RULES.limits.weight
+  const limits = field === 'age' ? {min: 18, max: 100} : field === 'heightCm' ? CALCULATOR_RULES.limits.height : CALCULATOR_RULES.limits.weight
   calculator[field] = Math.max(limits.min, Math.min(limits.max, Math.round(Number(value))))
+  if (field === 'age') {
+    calculator.ageBand = calculator.age < 30 ? '18-29' : calculator.age < 60 ? '30-59' : '60+'
+    showAgeBand()
+    return
+  }
   const output = field === 'heightCm' ? $('#height-output') : $('#weight-output')
   if (output) output.querySelector('strong').textContent = calculator[field]
   if (field === 'weightKg') {
@@ -438,7 +528,7 @@ const supportGuidance = item => {
 }
 
 const relevantScreenings = () => {
-  const age = ageFloor(answers.age || '18–24')
+  const age = ageFloor(calculator.age)
   const recent = answers.recent
   const priority = ['pressure', 'cardio', 'colorectal', 'measurements']
   return priority
@@ -466,7 +556,7 @@ const showScreenings = ({push = true} = {}) => {
     <div class="sheet-handle" aria-hidden="true"></div>
     <p class="eyebrow">Your screening guide</p>
     <h1>These checks may be relevant</h1>
-    <p>Based on your age band and recent screening answer. HealthHub or a clinic must confirm eligibility.</p>
+    <p>Based on age ${calculator.age} and your recent screening answer. HealthHub or a clinic must confirm eligibility.</p>
     <div class="screening-list">
       ${items.map(item => `<button class="screening" data-screening="${item.id}"><strong>${item.title}</strong><span>${item.relevance}</span></button>`).join('')}
     </div>
@@ -475,23 +565,28 @@ const showScreenings = ({push = true} = {}) => {
   `, {push})
 }
 
-const showScreening = id => {
+const showScreening = (id, page = 0) => {
   state = `screening-${id}`
+  screeningPage = Math.max(0, Math.min(3, page))
   const item = CAMPAIGN.screenings.find(entry => entry.id === id)
   if (!item) return showScreenings()
   track('Screening Explored', {variant, screening: id})
+  const pages = [
+    ['Why it may matter', item.why],
+    ['What it checks', item.check],
+    ['What to expect', item.expect],
+    ['Official next step', 'HealthHub can confirm current eligibility and help you take the next step when you are ready.'],
+  ]
+  const [title, content] = pages[screeningPage]
   render(`
     <div class="sheet-handle" aria-hidden="true"></div>
-    <p class="eyebrow">May be relevant</p>
+    <p class="eyebrow">May be relevant · ${screeningPage + 1} of 4</p>
     <h1>${item.title}</h1>
-    <h2>Why it may matter</h2><p>${item.why}</p>
-    <h2>What it checks</h2><p>${item.check}</p>
-    <h2>What to expect</h2><p>${item.expect}</p>
-    <h2>Cost, support and MediSave</h2><p>${supportGuidance(item)}</p>
-    <p class="source">Guidance version ${CAMPAIGN.version}; verified ${CAMPAIGN.verified}.</p>
-    <a class="primary link" href="${CAMPAIGN.officialUrl}" target="_blank" rel="noopener" data-official="${id}">Open official HealthHub page <span aria-hidden="true">↗</span></a>
-    <button class="secondary" data-action="screenings">Back to my list</button>
-  `, {surface: 'detail'})
+    <h2>${title}</h2><p>${content}</p>
+    ${screeningPage === 3 ? `<a class="primary link" href="${CAMPAIGN.officialUrl}" target="_blank" rel="noopener" data-official="${id}">Open official HealthHub page <span aria-hidden="true">↗</span></a>` : `<button class="primary" data-screening-page="${id}" data-page="${screeningPage + 1}">Next</button>`}
+    <button class="secondary" data-action="ask">Ask Robin</button>
+    <button class="secondary" data-action="${screeningPage ? 'screening-back' : 'screenings'}" data-screening-id="${id}">Back</button>
+  `)
 }
 
 const intents = [
@@ -530,7 +625,7 @@ const answerQuestion = query => {
 
 const resetJourney = () => {
   Object.keys(answers).forEach(key => delete answers[key])
-  Object.assign(calculator, {adult: null, profile: null, ageBand: null, heightCm: 168, weightKg: 65, activity: null})
+  Object.assign(calculator, {adult: null, profile: null, age: 35, ageBand: '30-59', heightCm: 168, weightKg: 65, activity: null})
   questionsTracked = false
   calculatorTracked = false
   calculatorStarted = false
@@ -635,11 +730,33 @@ ui.addEventListener('click', event => {
     showQuestion(0)
   }
   if (target.dataset.action === 'ask') showAsk()
+  if (target.dataset.action === 'close') closeJourney()
+  if (target.dataset.action === 'mode-menu') { closedState = state; showModeMenu() }
+  if (target.dataset.action === 'resume') resumeJourney()
+  if (target.dataset.action === 'move-robin') {
+    window.dispatchEvent(new CustomEvent('robin-reposition-request'))
+    closeJourney()
+    setStatus('Tap a new surface to move Robin')
+  }
   if (target.dataset.question) {
     answers[target.dataset.question] = target.dataset.value
     showQuestion(Number(target.dataset.next))
   }
   if (target.dataset.screening) showScreening(target.dataset.screening)
+  if (target.dataset.screeningPage) showScreening(target.dataset.screeningPage, Number(target.dataset.page))
+  if (target.dataset.action === 'screening-back') showScreening(target.dataset.screeningId, screeningPage - 1)
+  if (target.dataset.mode) {
+    const mode = target.dataset.mode
+    if (mode === '3d') {
+      try { if (window.XR8 && !XR8.isPaused()) XR8.pause() } catch (_) {}
+      setRobinMode('3d', 'user-selected')
+      resumeJourney()
+    } else {
+      setRobinMode('ar', 'user-selected')
+      try { if (window.XR8?.isPaused()) XR8.resume() } catch (_) {}
+      resumeJourney()
+    }
+  }
   if (target.dataset.query) answerQuestion(target.dataset.query)
   if (target.dataset.adjust) updateInstrument(target.dataset.adjust, calculator[target.dataset.adjust] + Number(target.dataset.direction))
   if (target.dataset.calc === 'adult') {
@@ -649,8 +766,7 @@ ui.addEventListener('click', event => {
   }
   if (target.dataset.calc === 'profile') {
     calculator.profile = target.dataset.value
-    if (calculator.profile === 'prefer-not') showHeightInstrument()
-    else showAgeBand()
+    showAgeBand()
   }
   if (target.dataset.calc === 'ageBand') { calculator.ageBand = target.dataset.value; showHeightInstrument() }
   if (target.dataset.calc === 'activity') { calculator.activity = target.dataset.value; showCalculatorResult() }
@@ -666,13 +782,19 @@ ui.addEventListener('submit', event => {
   if (query) answerQuestion(query)
 })
 
+spatialPrompt?.addEventListener('click', event => {
+  if (event.target.closest('[data-prompt="ask"]')) {
+    stopIdlePrompts()
+    showAsk()
+  }
+})
+
 window.addEventListener('robin-placed', showPlaced)
 window.addEventListener('robin-reality-ready', showReadyToPlace)
 window.addEventListener('robin-placement-missed', showPlacementMissed)
 window.addEventListener('robin-open-cards', () => {
   if (['scanning', 'ready-to-place', 'placed'].includes(state)) return
-  shell.hidden = false
-  announce('Robin guide opened')
+  resumeJourney()
 })
 window.addEventListener('robin-reset', resetJourney)
 window.addEventListener('popstate', event => {

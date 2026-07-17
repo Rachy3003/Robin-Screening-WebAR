@@ -2,6 +2,17 @@ import * as ecs from '@8thwall/ecs'
 
 const OBJECT_PLACED_EVENT = 'object-placed'
 const RESET_EVENT = 'robin-reset'
+let placedRobin: bigint | null = null
+let placementWorld: ecs.World | null = null
+
+window.addEventListener('robin-reposition-request', () => {
+  if (!placementWorld) return
+  if (placedRobin) {
+    placementWorld.deleteEntity(placedRobin)
+    placedRobin = null
+  }
+  placementWorld.events.dispatch(placementWorld.events.globalId, RESET_EVENT)
+})
 
 ecs.registerComponent({
   name: 'tap-to-place',
@@ -9,6 +20,7 @@ ecs.registerComponent({
     prefab: 'eid'
   },
   stateMachine: ({world, eid, schemaAttribute, defineState}) => {
+    placementWorld = world
     defineState('ready').initial().listen(eid, ecs.input.SCREEN_TOUCH_START, (e) => {
       if (!e.data.worldPosition) {
         window.dispatchEvent(new CustomEvent('robin-placement-missed'))
@@ -16,6 +28,7 @@ ecs.registerComponent({
       }
 
       const newEid = world.createEntity(schemaAttribute.get(eid).prefab)
+      placedRobin = newEid
       const newEntity = world.getEntity(newEid)
       newEntity.setLocalPosition(e.data.worldPosition)
       newEntity.set(ecs.Quaternion, ecs.math.quat.yRadians(0))
