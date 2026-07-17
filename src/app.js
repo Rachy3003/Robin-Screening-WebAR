@@ -20,6 +20,8 @@ let closedMarkup = ''
 let closedPanelClass = ''
 let idleTimers = []
 let screeningPage = 0
+let sheetCollapsed = false
+let sheetScrollTop = 0
 let state = 'loading'
 let questionIndex = 0
 let questionsTracked = false
@@ -97,9 +99,15 @@ const render = (html, options = {}) => {
     window.history.pushState({robinState: state}, '')
   }
   ui.className = `panel panel--${surface}`
+  sheetCollapsed = false
   shell.hidden = false
   stopIdlePrompts()
-  ui.innerHTML = `${html}<div class="panel-tools"><button data-action="mode-menu" aria-label="Experience options">•••</button><button data-action="close" aria-label="Close and see Robin">×</button></div>`
+  const content = html.replaceAll('<div class="sheet-handle" aria-hidden="true"></div>', '')
+  ui.innerHTML = `<button class="sheet-handle" data-action="toggle-sheet" aria-expanded="true" aria-label="Minimise this panel"></button>${content}<div class="panel-tools"><button data-action="mode-menu" aria-label="Experience options">•••</button><button data-action="close" aria-label="Close and see Robin">×</button></div>`
+  ui.querySelector('.sheet-handle')?.addEventListener('click', event => {
+    event.stopPropagation()
+    toggleSheet()
+  })
   requestAnimationFrame(updateViewportLayout)
   if (focus) {
     const heading = ui.querySelector('h1')
@@ -108,6 +116,21 @@ const render = (html, options = {}) => {
       requestAnimationFrame(() => heading.focus({preventScroll: true}))
     }
   }
+  renderSimulator()
+}
+
+const toggleSheet = forceExpanded => {
+  const expand = forceExpanded === true || (forceExpanded !== false && sheetCollapsed)
+  if (!expand) sheetScrollTop = ui.scrollTop
+  sheetCollapsed = !expand
+  ui.classList.toggle('is-collapsed', sheetCollapsed)
+  const handle = ui.querySelector('.sheet-handle')
+  handle?.setAttribute('aria-expanded', String(!sheetCollapsed))
+  handle?.setAttribute('aria-label', sheetCollapsed ? 'Expand this panel' : 'Minimise this panel')
+  if (sheetCollapsed) ui.scrollTop = 0
+  else requestAnimationFrame(() => { ui.scrollTop = sheetScrollTop })
+  announce(sheetCollapsed ? 'Panel minimised' : 'Panel expanded')
+  requestAnimationFrame(updateViewportLayout)
   renderSimulator()
 }
 
@@ -691,6 +714,7 @@ const renderSimulator = () => {
       <button data-sim="loading">Loading</button><button data-sim="scanning">Scanning</button>
       <button data-sim="ready">Ready to place</button><button data-sim="placed">Placed</button>
       <button data-sim="pickup">Long-press pickup</button><button data-sim="toggle-mode">Toggle AR / 3D</button>
+      <button data-sim="collapse-sheet">Collapse sheet</button><button data-sim="expand-sheet">Expand sheet</button>
       <button data-sim="model-failed">Model failure</button><button data-sim="lost">Tracking lost</button>
       <button data-sim="recovered">Recovery success</button><button data-sim="recovery-failed">3D fallback</button>
       <button data-sim="calculator-offer">Calculator offer</button><button data-sim="adult">Adult check</button>
@@ -717,6 +741,8 @@ simulatorPanel?.addEventListener('click', event => {
   if (action === 'placed') showPlaced()
   if (action === 'pickup') window.dispatchEvent(new CustomEvent('robin-pickup-start'))
   if (action === 'toggle-mode') switchRobinMode(document.body.dataset.robinMode === 'ar' ? '3d' : 'ar')
+  if (action === 'collapse-sheet') toggleSheet(false)
+  if (action === 'expand-sheet') toggleSheet(true)
   if (action === 'lost') setStatus('Tracking lost. Move slowly back toward the surface.', 'warning')
   if (action === 'recovered') { setRobinMode('ar', 'tracking-recovery'); setStatus('Tracking restored') }
   if (action === 'recovery-failed') { setRobinMode('3d', 'tracking-recovery'); setStatus('Continuing in screen-based 3D', 'warning') }
@@ -779,6 +805,7 @@ ui.addEventListener('click', event => {
   }
   if (target.dataset.action === 'ask') showAsk()
   if (target.dataset.action === 'close') closeJourney()
+  if (target.dataset.action === 'toggle-sheet') toggleSheet()
   if (target.dataset.action === 'mode-menu') { closedState = state; showModeMenu() }
   if (target.dataset.action === 'resume') resumeJourney()
   if (target.dataset.action === 'move-robin') {
