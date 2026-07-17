@@ -16,7 +16,7 @@ let state = 'loading'
 let questionIndex = 0
 let questionsTracked = false
 let modelViewerLoaded = false
-let placementTimer = null
+let arStartupTimer = null
 let instrumentCleanup = null
 let calculatorTracked = false
 let calculatorStarted = false
@@ -113,20 +113,26 @@ const showUnavailable = () => {
 }
 
 const showScanning = () => {
+  if (variant !== 'ar' || state === 'placed') return
   state = 'scanning'
   hideJourney()
   setStatus('Move your phone slowly to find a surface')
-  clearTimeout(placementTimer)
-  placementTimer = setTimeout(showReadyToPlace, simulatorEnabled ? 300 : 2200)
   renderSimulator()
 }
 
 const showReadyToPlace = () => {
-  if (!simulatorEnabled && state !== 'scanning' && state !== 'loading') return
+  if (variant !== 'ar' || (!simulatorEnabled && state !== 'scanning' && state !== 'loading')) return
+  clearTimeout(arStartupTimer)
   state = 'ready-to-place'
   hideJourney()
-  setStatus('Point at the target, then tap to place Robin')
+  setStatus('Surface found. Tap the target to place Robin')
   renderSimulator()
+}
+
+const showPlacementMissed = () => {
+  if (variant !== 'ar' || state !== 'ready-to-place') return
+  setStatus('No surface at that spot yet. Move slowly, point at the target, and tap again.', 'warning')
+  track('Placement Missed', {variant})
 }
 
 const showIntro = ({push = true} = {}) => {
@@ -143,7 +149,7 @@ const showIntro = ({push = true} = {}) => {
 
 const showPlaced = () => {
   if (variant !== 'ar' || !['loading', 'scanning', 'ready-to-place'].includes(state)) return
-  clearTimeout(placementTimer)
+  clearTimeout(arStartupTimer)
   state = 'placed'
   hideJourney()
   setStatus('Robin is ready')
@@ -651,6 +657,8 @@ ui.addEventListener('submit', event => {
 })
 
 window.addEventListener('robin-placed', showPlaced)
+window.addEventListener('robin-reality-ready', showReadyToPlace)
+window.addEventListener('robin-placement-missed', showPlacementMissed)
 window.addEventListener('robin-open-cards', () => {
   if (['scanning', 'ready-to-place', 'placed'].includes(state)) return
   shell.hidden = false
@@ -705,10 +713,11 @@ const showModelFailure = () => {
   setTimeout(() => showIntro({push: false}), simulatorEnabled ? 350 : 3000)
 }
 
-const start3d = () => {
+const start3d = (source = 'assigned') => {
+  clearTimeout(arStartupTimer)
   state = 'model-loading'
   hideJourney()
-  setRobinMode('3d')
+  setRobinMode('3d', source)
   setStatus('Loading Robin…')
   if (fallbackModel?.getAttribute('loaded') !== null) setTimeout(() => showIntro({push: false}), simulatorEnabled ? 350 : 3000)
   else setTimeout(() => {
@@ -738,6 +747,14 @@ try {
     setRobinMode('ar')
     window.addEventListener('xrloaded', showScanning, {once: true})
     setTimeout(() => { if (state === 'loading') showScanning() }, simulatorEnabled ? 400 : 3000)
+    if (!simulatorEnabled) {
+      arStartupTimer = setTimeout(() => {
+        if (!['loading', 'scanning'].includes(state)) return
+        track('AR Startup Failed', {variant, outcome: '3d-fallback'})
+        try { if (window.XR8 && !XR8.isPaused()) XR8.pause() } catch (_) {}
+        start3d('capability-fallback')
+      }, 15000)
+    }
   }
 } catch (error) {
   console.error(error)

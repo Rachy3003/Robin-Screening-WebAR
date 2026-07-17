@@ -10,7 +10,10 @@ ecs.registerComponent({
   },
   stateMachine: ({world, eid, schemaAttribute, defineState}) => {
     defineState('ready').initial().listen(eid, ecs.input.SCREEN_TOUCH_START, (e) => {
-      if (!e.data.worldPosition) return
+      if (!e.data.worldPosition) {
+        window.dispatchEvent(new CustomEvent('robin-placement-missed'))
+        return
+      }
 
       const newEid = world.createEntity(schemaAttribute.get(eid).prefab)
       const newEntity = world.getEntity(newEid)

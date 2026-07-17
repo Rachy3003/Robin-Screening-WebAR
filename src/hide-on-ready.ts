@@ -9,6 +9,7 @@ ecs.registerComponent({
 
     defineState('ready').onEnter(() => {
       ecs.Disabled.reset(world, eid)
+      window.dispatchEvent(new CustomEvent('robin-reality-ready'))
     })
   }
 })
