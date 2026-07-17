@@ -242,7 +242,7 @@ const showPlaced = () => {
   hideJourney()
   setStatus('Robin is ready')
   track('Robin Placed', {variant})
-  setTimeout(() => showIntro({push: false}), simulatorEnabled ? 350 : 3000)
+  setTimeout(() => closedMarkup ? resumeJourney() : showIntro({push: false}), simulatorEnabled ? 350 : 3000)
 }
 
 const calculatorProgress = (step, total = 7) => `
@@ -754,7 +754,7 @@ ui.addEventListener('click', event => {
     } else {
       setRobinMode('ar', 'user-selected')
       try { if (window.XR8?.isPaused()) XR8.resume() } catch (_) {}
-      resumeJourney()
+      showScanning()
     }
   }
   if (target.dataset.query) answerQuestion(target.dataset.query)
