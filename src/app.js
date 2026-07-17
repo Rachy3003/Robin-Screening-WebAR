@@ -9,6 +9,7 @@ const fallback = $('#robin-3d')
 const fallbackModel = fallback?.querySelector('model-viewer')
 const statusRegion = $('#journey-status')
 const robinControls = $('#robin-controls')
+const arFallbackButton = $('#ar-fallback')
 const simulatorPanel = $('#simulator')
 const answers = {}
 const calculator = {adult: null, profile: null, ageBand: null, heightCm: 168, weightKg: 65, activity: null}
@@ -16,7 +17,7 @@ let state = 'loading'
 let questionIndex = 0
 let questionsTracked = false
 let modelViewerLoaded = false
-let arStartupTimer = null
+let fallbackOfferTimer = null
 let instrumentCleanup = null
 let calculatorTracked = false
 let calculatorStarted = false
@@ -117,12 +118,20 @@ const showScanning = () => {
   state = 'scanning'
   hideJourney()
   setStatus('Move your phone slowly to find a surface')
+  arFallbackButton.hidden = true
+  clearTimeout(fallbackOfferTimer)
+  fallbackOfferTimer = setTimeout(() => {
+    if (!['loading', 'scanning'].includes(state)) return
+    arFallbackButton.hidden = false
+    announce('Still scanning. You can continue without AR if you prefer.')
+  }, simulatorEnabled ? 500 : 20000)
   renderSimulator()
 }
 
 const showReadyToPlace = () => {
   if (variant !== 'ar' || (!simulatorEnabled && state !== 'scanning' && state !== 'loading')) return
-  clearTimeout(arStartupTimer)
+  clearTimeout(fallbackOfferTimer)
+  arFallbackButton.hidden = true
   state = 'ready-to-place'
   hideJourney()
   setStatus('Surface found. Tap the target to place Robin')
@@ -149,7 +158,8 @@ const showIntro = ({push = true} = {}) => {
 
 const showPlaced = () => {
   if (variant !== 'ar' || !['loading', 'scanning', 'ready-to-place'].includes(state)) return
-  clearTimeout(arStartupTimer)
+  clearTimeout(fallbackOfferTimer)
+  arFallbackButton.hidden = true
   state = 'placed'
   hideJourney()
   setStatus('Robin is ready')
@@ -714,7 +724,8 @@ const showModelFailure = () => {
 }
 
 const start3d = (source = 'assigned') => {
-  clearTimeout(arStartupTimer)
+  clearTimeout(fallbackOfferTimer)
+  arFallbackButton.hidden = true
   state = 'model-loading'
   hideJourney()
   setRobinMode('3d', source)
@@ -725,11 +736,18 @@ const start3d = (source = 'assigned') => {
   }, simulatorEnabled ? 1500 : 8000)
 }
 
+arFallbackButton?.addEventListener('click', () => {
+  track('AR Fallback Selected', {variant, outcome: '3d-fallback'})
+  try { if (window.XR8 && !XR8.isPaused()) XR8.pause() } catch (_) {}
+  start3d('user-selected-fallback')
+})
+
 const showLoading = () => {
   state = 'loading'
   hideJourney()
   setStatus(variant === 'ar' ? 'Starting camera…' : 'Preparing Robin…')
   robinControls.hidden = true
+  arFallbackButton.hidden = true
   track('Loading Started', {variant})
 }
 
@@ -747,14 +765,6 @@ try {
     setRobinMode('ar')
     window.addEventListener('xrloaded', showScanning, {once: true})
     setTimeout(() => { if (state === 'loading') showScanning() }, simulatorEnabled ? 400 : 3000)
-    if (!simulatorEnabled) {
-      arStartupTimer = setTimeout(() => {
-        if (!['loading', 'scanning'].includes(state)) return
-        track('AR Startup Failed', {variant, outcome: '3d-fallback'})
-        try { if (window.XR8 && !XR8.isPaused()) XR8.pause() } catch (_) {}
-        start3d('capability-fallback')
-      }, 15000)
-    }
   }
 } catch (error) {
   console.error(error)
