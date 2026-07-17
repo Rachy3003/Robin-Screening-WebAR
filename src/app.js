@@ -103,7 +103,7 @@ const render = (html, options = {}) => {
   shell.hidden = false
   stopIdlePrompts()
   const content = html.replaceAll('<div class="sheet-handle" aria-hidden="true"></div>', '')
-  ui.innerHTML = `<button class="sheet-handle" data-action="toggle-sheet" aria-expanded="true" aria-label="Minimise this panel"></button>${content}<div class="panel-tools"><button data-action="mode-menu" aria-label="Experience options">•••</button><button data-action="close" aria-label="Close and see Robin">×</button></div>`
+  ui.innerHTML = `<button class="sheet-handle" data-action="toggle-sheet" aria-expanded="true" aria-label="Minimise this panel"></button><picture><source srcset="./assets/robin-portrait.avif" type="image/avif"><source srcset="./assets/robin-portrait.webp" type="image/webp"><img class="robin-sheet-portrait" src="./assets/robin-portrait.png" alt="" aria-hidden="true"></picture>${content}<div class="panel-tools"><button data-action="mode-menu" aria-label="Experience options">•••</button><button data-action="close" aria-label="Close and see Robin">×</button></div>`
   ui.querySelector('.sheet-handle')?.addEventListener('click', event => {
     event.stopPropagation()
     toggleSheet()
@@ -139,6 +139,8 @@ const updateViewportLayout = () => {
   document.documentElement.style.setProperty('--visual-height', `${height}px`)
   const sheetHeight = shell.hidden ? 0 : Math.min(ui.getBoundingClientRect().height, height * .78)
   document.documentElement.style.setProperty('--sheet-height', `${sheetHeight}px`)
+  const robinIsCovered = !shell.hidden && !sheetCollapsed && sheetHeight >= height * .52
+  ui.classList.toggle('has-robin-portrait', robinIsCovered)
 }
 
 const stopIdlePrompts = () => {
