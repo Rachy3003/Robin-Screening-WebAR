@@ -1,5 +1,5 @@
 import {CAMPAIGN, ageFloor} from './campaign'
-import {estimatePulse} from './pulse'
+import {CALCULATOR_RULES, calculateSnapshot, formatCalories} from './calculator-rules.mjs'
 import {track} from './analytics'
 
 const $ = selector => document.querySelector(selector)
@@ -9,19 +9,21 @@ const fallback = $('#robin-3d')
 const fallbackModel = fallback?.querySelector('model-viewer')
 const statusRegion = $('#journey-status')
 const robinControls = $('#robin-controls')
-const pulseVideo = $('#pulse-video')
 const simulatorPanel = $('#simulator')
 const answers = {}
+const calculator = {adult: null, profile: null, ageBand: null, heightCm: 168, weightKg: 65, activity: null}
 let state = 'loading'
 let questionIndex = 0
-let pulseBpm = null
-let pulseAbort = null
 let questionsTracked = false
 let modelViewerLoaded = false
 let placementTimer = null
-const history = []
+let instrumentCleanup = null
+let calculatorTracked = false
+let calculatorStarted = false
+let restoringHistory = false
 const params = new URLSearchParams(window.location.search)
 const simulatorEnabled = params.get('simulator') === '1'
+const simulatorUiHidden = params.get('simulator-ui') === '0'
 const simulatorEvents = []
 
 const requestedVariant = params.get('variant')
@@ -77,7 +79,10 @@ const setRobinMode = (mode, source = 'assigned') => {
 
 const render = (html, options = {}) => {
   const {surface = 'sheet', push = true, focus = true} = options
-  if (push && ui.innerHTML && history.at(-1) !== state) history.push(state)
+  if (state.startsWith('calculator')) setStatus('')
+  if (push && !restoringHistory && window.history.state?.robinState !== state) {
+    window.history.pushState({robinState: state}, '')
+  }
   ui.className = `panel panel--${surface}`
   shell.hidden = false
   ui.innerHTML = html
@@ -132,7 +137,7 @@ const showIntro = ({push = true} = {}) => {
     <p class="eyebrow">Meet Robin</p>
     <h1>Let’s look at the bigger picture</h1>
     <p>I can help you explore which general health screenings may be relevant. I won’t diagnose you or confirm eligibility.</p>
-    <button class="primary" data-action="pulse-offer">Continue</button>
+    <button class="primary" data-action="calculator-offer">Continue</button>
   `, {surface: 'conversation', push})
 }
 
@@ -143,95 +148,252 @@ const showPlaced = () => {
   hideJourney()
   setStatus('Robin is ready')
   track('Robin Placed', {variant})
-  setTimeout(() => showIntro({push: false}), simulatorEnabled ? 250 : 950)
+  setTimeout(() => showIntro({push: false}), simulatorEnabled ? 350 : 3000)
 }
 
-const showPulseOffer = () => {
-  state = 'pulse-offer'
-  track('Pulse Offered', {variant})
+const calculatorProgress = (step, total = 7) => `
+  <div class="calculator-progress" aria-label="Step ${step} of ${total}">
+    <span>Step ${step} of ${total}</span><div><i style="--progress:${step / total * 100}%"></i></div>
+  </div>`
+
+const calculatorBack = action => `<button class="secondary" data-action="${action}">Back</button>`
+
+const cueRobin = cue => {
+  fallback.dataset.cue = cue
+  setTimeout(() => { if (fallback.dataset.cue === cue) delete fallback.dataset.cue }, 420)
+  window.dispatchEvent(new CustomEvent('robin-calculator-cue', {detail: {cue}}))
+}
+
+const showCalculatorOffer = () => {
+  state = 'calculator-offer'
+  setStatus('')
+  track('Calculator Offered', {variant})
+  cueRobin('calculator-offer')
   render(`
     <p class="eyebrow">Optional</p>
-    <h1>Meet your pulse</h1>
-    <p>Use your phone camera for a 15-second experimental estimate. It is not a medical measurement and will not affect your screening options.</p>
-    <button class="primary" data-action="pulse-start">Estimate my pulse</button>
-    <button class="secondary" data-action="questions">Skip this</button>
+    <h1>Know your health numbers</h1>
+    <p>Use Robin's interactive tools to estimate your BMI and daily calorie needs. It takes about a minute and does not change your screening options.</p>
+    <button class="primary" data-action="calculator-start">Start calculator</button>
+    <button class="secondary" data-action="calculator-skip">Skip to screening guide</button>
   `)
 }
 
-const pauseAr = async () => {
-  try { if (window.XR8 && !XR8.isPaused()) XR8.pause() } catch (_) {}
-  await new Promise(resolve => setTimeout(resolve, 350))
+const showAdultCheck = () => {
+  state = 'calculator-adult'
+  if (!calculatorStarted) {
+    calculatorStarted = true
+    track('Calculator Started', {variant})
+  }
+  render(`
+    ${calculatorProgress(1)}
+    <h1>Are you 18 or older?</h1>
+    <p>This calculator uses adult BMI and calorie guidance.</p>
+    <div class="choices">
+      <button class="choice" data-calc="adult" data-value="yes">Yes, I am 18 or older</button>
+      <button class="choice" data-calc="adult" data-value="no">No, I am under 18</button>
+    </div>
+    ${calculatorBack('calculator-offer')}
+  `)
 }
 
-const resumeAr = async () => {
-  if (variant === '3d') return setRobinMode('3d')
+const showUnder18 = () => {
+  state = 'calculator-under18'
+  render(`
+    <p class="eyebrow">Age-appropriate guidance</p>
+    <h1>Adult calculations aren't the right fit yet</h1>
+    <p>Health needs change as you grow. Use HealthHub's nutrition guidance for your age, or continue with Robin's general screening guide.</p>
+    <a class="primary link" href="${CALCULATOR_RULES.under18Url}" target="_blank" rel="noopener" data-under18>Open HealthHub nutrition guidance <span aria-hidden="true">↗</span></a>
+    <button class="secondary" data-action="questions">Continue to screening guide</button>
+    ${calculatorBack('calculator-adult')}
+  `)
+}
+
+const showCalculationProfile = () => {
+  state = 'calculator-profile'
+  render(`
+    ${calculatorProgress(2)}
+    <h1>Which option should we use?</h1>
+    <p>This is used only by the calorie equation and may not reflect your gender identity.</p>
+    <div class="choices">
+      ${[['male', 'Male'], ['female', 'Female'], ['prefer-not', 'Prefer not to say']].map(([value, label]) => `<button class="choice${calculator.profile === value ? ' is-selected' : ''}" data-calc="profile" data-value="${value}" aria-pressed="${calculator.profile === value}">${label}</button>`).join('')}
+    </div>
+    ${calculatorBack('calculator-adult')}
+  `)
+}
+
+const showAgeBand = () => {
+  state = 'calculator-age'
+  render(`
+    ${calculatorProgress(3)}
+    <h1>What is your age group?</h1>
+    <div class="choices">
+      ${[['18-29', '18–29'], ['30-59', '30–59'], ['60+', '60+']].map(([value, label]) => `<button class="choice${calculator.ageBand === value ? ' is-selected' : ''}" data-calc="ageBand" data-value="${value}" aria-pressed="${calculator.ageBand === value}">${label}</button>`).join('')}
+    </div>
+    ${calculatorBack('calculator-profile')}
+  `)
+}
+
+const instrumentButton = (field, direction, label) => `<button class="instrument-step" data-adjust="${field}" data-direction="${direction}" aria-label="${label}">${direction < 0 ? '−' : '+'}</button>`
+
+const showHeightInstrument = () => {
+  state = 'calculator-height'
+  cueRobin('measure-height')
+  render(`
+    ${calculator.profile === 'prefer-not' ? calculatorProgress(3, 4) : calculatorProgress(4)}
+    <h1>Set your height</h1>
+    <p>Slide the measuring tape until it matches your height.</p>
+    <div class="height-instrument">
+      ${instrumentButton('heightCm', -1, 'Decrease height by one centimetre')}
+      <div class="height-ruler">
+        <input id="height-control" class="height-control" type="range" min="50" max="250" step="1" value="${calculator.heightCm}" aria-label="Height in centimetres">
+        <output id="height-output" for="height-control"><strong>${calculator.heightCm}</strong><span>cm</span></output>
+      </div>
+      ${instrumentButton('heightCm', 1, 'Increase height by one centimetre')}
+    </div>
+    <button class="primary" data-action="calculator-weight">Continue</button>
+    ${calculatorBack(calculator.profile === 'prefer-not' ? 'calculator-profile' : 'calculator-age')}
+  `)
+  bindInstruments()
+}
+
+const weightRotation = value => -125 + ((value - 25) / 225) * 250
+
+const showWeightDial = () => {
+  state = 'calculator-weight'
+  cueRobin('turn-weight-dial')
+  render(`
+    ${calculator.profile === 'prefer-not' ? calculatorProgress(4, 4) : calculatorProgress(5)}
+    <h1>Turn the weight dial</h1>
+    <p>Drag around the dial until it shows your weight.</p>
+    <div class="weight-instrument">
+      ${instrumentButton('weightKg', -1, 'Decrease weight by one kilogram')}
+      <div id="weight-dial" class="weight-dial" role="slider" tabindex="0" aria-label="Weight in kilograms" aria-valuemin="25" aria-valuemax="250" aria-valuenow="${calculator.weightKg}" style="--dial-angle:${weightRotation(calculator.weightKg)}deg">
+        <div class="dial-ticks" aria-hidden="true"></div><i aria-hidden="true"></i>
+        <output id="weight-output"><strong>${calculator.weightKg}</strong><span>kg</span></output>
+      </div>
+      ${instrumentButton('weightKg', 1, 'Increase weight by one kilogram')}
+    </div>
+    <button class="primary" data-action="${calculator.profile === 'prefer-not' ? 'calculator-result' : 'calculator-activity'}">${calculator.profile === 'prefer-not' ? 'See my BMI' : 'Continue'}</button>
+    ${calculatorBack('calculator-height')}
+  `)
+  bindInstruments()
+}
+
+const showActivity = () => {
+  state = 'calculator-activity'
+  const options = [
+    ['lvl1', 'Mostly inactive', 'Mostly sitting with little planned activity'],
+    ['lvl2', 'Somewhat active', 'Light activity or exercise a few times a week'],
+    ['lvl3', 'Active', 'Moderate activity or exercise most days'],
+    ['lvl4', 'Very active', 'Hard activity, training or physical work most days'],
+  ]
+  render(`
+    ${calculatorProgress(6)}
+    <h1>How active is a typical day?</h1>
+    <div class="choices activity-choices">
+      ${options.map(([value, label, description]) => `<button class="choice${calculator.activity === value ? ' is-selected' : ''}" data-calc="activity" data-value="${value}" aria-pressed="${calculator.activity === value}"><strong>${label}</strong><span>${description}</span></button>`).join('')}
+    </div>
+    ${calculatorBack('calculator-weight')}
+  `)
+}
+
+const bmiMarkerPosition = bmi => Math.max(4, Math.min(96, ((bmi - 15) / 17.5) * 100))
+
+const showCalculatorResult = () => {
+  state = 'calculator-result'
+  setStatus('')
+  let snapshot
   try {
-    if (window.XR8 && XR8.isPaused()) XR8.resume()
-    await new Promise(resolve => setTimeout(resolve, 900))
-    setRobinMode('ar')
+    snapshot = calculateSnapshot(calculator)
   } catch (_) {
-    setRobinMode('3d', 'tracking-recovery')
-    setStatus('AR could not recover. Continuing in screen-based 3D.', 'warning')
+    return showCalculatorFailure()
+  }
+  cueRobin('reveal-result')
+  if (!calculatorTracked) {
+    calculatorTracked = true
+    track('Calculator Completed', {variant})
+  }
+  const calories = snapshot.recommended && (snapshot.recommended.low === snapshot.recommended.high
+    ? `${formatCalories(snapshot.recommended.low)} kcal`
+    : `${formatCalories(snapshot.recommended.low)}–${formatCalories(snapshot.recommended.high)} kcal`)
+  render(`
+    <div class="snapshot-robin" aria-hidden="true"><span>Snapshot ready!</span></div>
+    <p class="eyebrow">Your bigger picture</p>
+    <h1 class="snapshot-number">${snapshot.bmi} <small>BMI</small></h1>
+    <p>This falls in HealthHub's <strong>${snapshot.classification.label}</strong> range: ${snapshot.classification.risk.toLowerCase()}.</p>
+    <div class="bmi-scale" role="img" aria-label="BMI ${snapshot.bmi}, ${snapshot.classification.risk}">
+      <i style="--marker:${bmiMarkerPosition(snapshot.bmi)}%"><span>You</span></i>
+      <div><span></span><span></span><span></span><span></span></div>
+      <ol><li>&lt;18.5</li><li>18.5</li><li>23</li><li>27.5+</li></ol>
+    </div>
+    ${calories ? `<div class="snapshot-grid"><div><span>${snapshot.classification.calorieLabel}</span><strong>${calories}</strong></div><div><span>Activity</span><strong>${escapeHtml(activityLabel(calculator.activity))}</strong></div></div>` : '<div class="snapshot-grid snapshot-grid--single"><div><span>Calorie estimate</span><strong>Not calculated</strong><small>A calculation profile is required.</small></div></div>'}
+    ${snapshot.classification.context ? `<p class="health-note"><strong>Worth knowing:</strong> ${snapshot.classification.context}</p>` : ''}
+    <p class="health-note">BMI is a screening indicator, not a diagnosis. Pregnancy, muscle mass and some health conditions can affect what it means.</p>
+    <p><strong>This is one useful indicator—not the whole picture.</strong></p>
+    <button class="primary" data-action="questions">See my screening guide</button>
+    <button class="secondary" data-action="calculator-height" data-edit-result>Adjust my dials</button>
+    <a class="secondary link" href="${CALCULATOR_RULES.sourceUrl}" target="_blank" rel="noopener" data-calculator-official>Open official HealthHub calculator <span aria-hidden="true">↗</span></a>
+    <p class="source">Calculation rules verified ${CALCULATOR_RULES.verified}.</p>
+  `, {surface: 'detail'})
+}
+
+const activityLabel = value => ({lvl1: 'Mostly inactive', lvl2: 'Somewhat active', lvl3: 'Active', lvl4: 'Very active'}[value] || '')
+
+const showCalculatorFailure = () => {
+  state = 'calculator-failure'
+  track('Calculator Failed', {variant, outcome: 'calculation'})
+  render(`
+    <p class="eyebrow">Calculator unavailable</p>
+    <h1>Let's continue without a result</h1>
+    <p>Your screening guide still works, and none of your calculator details were saved.</p>
+    <button class="primary" data-action="questions">Continue to screening guide</button>
+    <button class="secondary" data-action="calculator-height">Try the calculator again</button>
+  `)
+}
+
+const updateInstrument = (field, value) => {
+  const limits = field === 'heightCm' ? CALCULATOR_RULES.limits.height : CALCULATOR_RULES.limits.weight
+  calculator[field] = Math.max(limits.min, Math.min(limits.max, Math.round(Number(value))))
+  const output = field === 'heightCm' ? $('#height-output') : $('#weight-output')
+  if (output) output.querySelector('strong').textContent = calculator[field]
+  if (field === 'weightKg') {
+    const dial = $('#weight-dial')
+    dial?.style.setProperty('--dial-angle', `${weightRotation(calculator.weightKg)}deg`)
+    dial?.setAttribute('aria-valuenow', calculator.weightKg)
+  } else {
+    const height = $('#height-control')
+    if (height) height.value = calculator.heightCm
   }
 }
 
-const startPulse = async () => {
-  state = 'pulse-capture'
-  pulseAbort = new AbortController()
-  render(`
-    <p class="eyebrow">Experimental estimate</p>
-    <h1>Cover the rear camera gently</h1>
-    <p>Keep your fingertip still. If your phone becomes warm or uncomfortable, stop.</p>
-    <progress id="pulse-progress" max="1" value="0"></progress>
-    <p id="pulse-status">Preparing camera…</p>
-    <button class="secondary" data-action="pulse-cancel">Cancel and continue</button>
-  `)
-  track('Pulse Started', {variant})
-  await pauseAr()
-  const result = await estimatePulse(pulseVideo, progress => {
-    $('#pulse-progress')?.setAttribute('value', progress)
-    const status = $('#pulse-status')
-    if (status) status.textContent = `Measuring… ${Math.round(progress * 100)}%`
-  }, pulseAbort.signal)
-  pulseAbort = null
-  if (state !== 'pulse-capture') return
-  await resumeAr()
-  finishPulse(result)
-}
-
-const pulseFailureCopy = {
-  'permission-denied': ['Camera permission is off', 'Allow camera access in your browser settings, or continue without a pulse estimate.'],
-  'poor-signal': ['The signal was not clear enough', 'Try again with your fingertip covering the camera gently and staying still.'],
-  timeout: ['The estimate took too long', 'You can try again, or continue without it.'],
-  unavailable: ['Pulse estimate is not available', 'This device cannot use the camera estimate. Your screening guide still works.'],
-  cancelled: ['Pulse estimate skipped', 'No problem—this does not affect your screening guide.'],
-}
-
-const finishPulse = result => {
-  state = 'pulse-result'
-  if (result.status === 'estimated') {
-    pulseBpm = result.bpm
-    fallback.style.setProperty('--pulse-seconds', `${60 / pulseBpm}s`)
-    window.dispatchEvent(new CustomEvent('robin-pulse-start', {detail: {bpm: pulseBpm}}))
-    track('Pulse Completed', {variant, outcome: 'estimated'})
-    render(`
-      <p class="eyebrow">Your snapshot</p>
-      <h1>About ${pulseBpm} beats per minute</h1>
-      <p>This experimental estimate reflects one moment. It is not a medical measurement and does not tell us whether you are healthy or unwell.</p>
-      <p><strong>One number is a snapshot. Regular screening helps you understand the bigger picture.</strong></p>
-      <button class="primary" data-action="questions">Explore screenings</button>
-    `)
-    return
+const bindInstruments = () => {
+  instrumentCleanup?.()
+  const height = $('#height-control')
+  const dial = $('#weight-dial')
+  const cleanups = []
+  if (height) {
+    const onInput = () => updateInstrument('heightCm', height.value)
+    height.addEventListener('input', onInput)
+    cleanups.push(() => height.removeEventListener('input', onInput))
   }
-  const [title, copy] = pulseFailureCopy[result.reason] || pulseFailureCopy.unavailable
-  track('Pulse Failed', {variant, outcome: result.reason})
-  render(`
-    <p class="eyebrow">Optional pulse estimate</p>
-    <h1>${title}</h1>
-    <p>${copy}</p>
-    ${['poor-signal', 'timeout'].includes(result.reason) ? '<button class="primary" data-action="pulse-start">Try again</button>' : ''}
-    <button class="${['poor-signal', 'timeout'].includes(result.reason) ? 'secondary' : 'primary'}" data-action="questions">Continue to screenings</button>
-  `)
+  if (dial) {
+    const setFromPointer = event => {
+      const rect = dial.getBoundingClientRect()
+      const degrees = Math.atan2(event.clientY - (rect.top + rect.height / 2), event.clientX - (rect.left + rect.width / 2)) * 180 / Math.PI + 90
+      const normalized = Math.max(-125, Math.min(125, degrees > 180 ? degrees - 360 : degrees))
+      updateInstrument('weightKg', 25 + ((normalized + 125) / 250) * 225)
+    }
+    const move = event => { if (dial.hasPointerCapture(event.pointerId)) setFromPointer(event) }
+    const down = event => { dial.setPointerCapture(event.pointerId); setFromPointer(event) }
+    const key = event => {
+      if (!['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp'].includes(event.key)) return
+      event.preventDefault()
+      updateInstrument('weightKg', calculator.weightKg + (['ArrowRight', 'ArrowUp'].includes(event.key) ? 1 : -1))
+    }
+    dial.addEventListener('pointerdown', down); dial.addEventListener('pointermove', move); dial.addEventListener('keydown', key)
+    cleanups.push(() => { dial.removeEventListener('pointerdown', down); dial.removeEventListener('pointermove', move); dial.removeEventListener('keydown', key) })
+  }
+  instrumentCleanup = () => cleanups.forEach(cleanup => cleanup())
 }
 
 const showQuestion = (index, {push = true} = {}) => {
@@ -247,7 +409,7 @@ const showQuestion = (index, {push = true} = {}) => {
       ${question.options.map(option => `<button class="choice${answers[question.id] === option ? ' is-selected' : ''}" data-question="${question.id}" data-value="${escapeHtml(option)}" data-next="${questionIndex + 1}" aria-pressed="${answers[question.id] === option}">${escapeHtml(option)}</button>`).join('')}
     </div>
     <div class="actions">
-      ${questionIndex ? '<button class="secondary" data-action="question-back">Back</button>' : '<button class="secondary" data-action="pulse-offer">Back</button>'}
+      ${questionIndex ? '<button class="secondary" data-action="question-back">Back</button>' : '<button class="secondary" data-action="calculator-offer">Back</button>'}
     </div>
     <p class="privacy">Your answers stay on this device and disappear when the session ends.</p>
   `, {push})
@@ -352,9 +514,10 @@ const answerQuestion = query => {
 
 const resetJourney = () => {
   Object.keys(answers).forEach(key => delete answers[key])
-  pulseBpm = null
+  Object.assign(calculator, {adult: null, profile: null, ageBand: null, heightCm: 168, weightKg: 65, activity: null})
   questionsTracked = false
-  history.length = 0
+  calculatorTracked = false
+  calculatorStarted = false
   simulatorEvents.length = 0
   robinControls.hidden = true
   if (variant === '3d') start3d()
@@ -363,20 +526,24 @@ const resetJourney = () => {
 
 const renderSimulator = () => {
   if (!simulatorEnabled || !simulatorPanel) return
-  simulatorPanel.hidden = false
+  simulatorPanel.hidden = simulatorUiHidden
   const eventText = simulatorEvents.slice(-6).map(event => `${event.name} ${JSON.stringify(event.props)}`).join('\n')
   simulatorPanel.innerHTML = `
     <div class="simulator__head"><h2>Robin Simulator</h2><button data-sim="collapse" aria-label="Collapse simulator">−</button></div>
-    <p><strong>State:</strong> ${escapeHtml(state)} · <strong>Mode:</strong> ${escapeHtml(document.body.dataset.robinMode || '')} · <strong>Pulse:</strong> ${pulseBpm || 'none'}</p>
+    <p><strong>State:</strong> ${escapeHtml(state)} · <strong>Mode:</strong> ${escapeHtml(document.body.dataset.robinMode || '')}<br><strong>Calculator:</strong> ${calculator.heightCm} cm · ${calculator.weightKg} kg · ${escapeHtml(calculator.profile || 'unset')}</p>
     <div class="simulator__grid">
       <button data-sim="loading">Loading</button><button data-sim="scanning">Scanning</button>
       <button data-sim="ready">Ready to place</button><button data-sim="placed">Placed</button>
       <button data-sim="model-failed">Model failure</button><button data-sim="lost">Tracking lost</button>
       <button data-sim="recovered">Recovery success</button><button data-sim="recovery-failed">3D fallback</button>
-      <select id="sim-bpm" aria-label="Simulated BPM"><option>60</option><option selected>72</option><option>90</option><option>120</option></select>
-      <button data-sim="pulse-success">Pulse success</button>
-      <button data-sim="poor-signal">Poor signal</button><button data-sim="permission-denied">Permission denied</button>
-      <button data-sim="cancelled">Pulse cancelled</button><button data-sim="timeout">Pulse timeout</button>
+      <button data-sim="calculator-offer">Calculator offer</button><button data-sim="adult">Adult check</button>
+      <button data-sim="profile">Profile</button><button data-sim="age">Age band</button>
+      <button data-sim="height">Height instrument</button><button data-sim="weight">Weight dial</button>
+      <button data-sim="activity">Activity</button><button data-sim="result">Typical result</button>
+      <select id="sim-boundary" aria-label="BMI boundary preset"><option value="18.5">BMI 18.5</option><option value="22.9">BMI 22.9</option><option value="23">BMI 23.0</option><option value="27.4">BMI 27.4</option><option value="27.5">BMI 27.5</option></select>
+      <button data-sim="boundary">Show boundary</button>
+      <button data-sim="under18">Under 18</button><button data-sim="prefer-not">Prefer not to say</button>
+      <button data-sim="calculator-failed">Calculator failure</button><button data-sim="reduced-motion">Reduced motion</button>
       <button data-sim="reset">Reset session</button>
     </div>
     <pre aria-label="Simulator event log">${escapeHtml(eventText || 'No events yet')}</pre>
@@ -395,8 +562,26 @@ simulatorPanel?.addEventListener('click', event => {
   if (action === 'recovered') { setRobinMode('ar', 'tracking-recovery'); setStatus('Tracking restored') }
   if (action === 'recovery-failed') { setRobinMode('3d', 'tracking-recovery'); setStatus('Continuing in screen-based 3D', 'warning') }
   if (action === 'model-failed') showModelFailure()
-  if (action === 'pulse-success') finishPulse({status: 'estimated', bpm: Number($('#sim-bpm')?.value || 72)})
-  if (['poor-signal', 'permission-denied', 'cancelled', 'timeout'].includes(action)) finishPulse({status: 'failed', reason: action})
+  if (action === 'calculator-offer') showCalculatorOffer()
+  if (action === 'adult') showAdultCheck()
+  if (action === 'profile') showCalculationProfile()
+  if (action === 'age') showAgeBand()
+  if (action === 'height') showHeightInstrument()
+  if (action === 'weight') showWeightDial()
+  if (action === 'activity') showActivity()
+  if (action === 'result') {
+    Object.assign(calculator, {adult: 'yes', profile: 'male', ageBand: '18-29', heightCm: 168, weightKg: 65, activity: 'lvl2'})
+    showCalculatorResult()
+  }
+  if (action === 'boundary') {
+    const bmi = Number($('#sim-boundary')?.value || 23)
+    Object.assign(calculator, {adult: 'yes', profile: 'female', ageBand: '30-59', heightCm: 200, weightKg: bmi * 4, activity: 'lvl2'})
+    showCalculatorResult()
+  }
+  if (action === 'under18') showUnder18()
+  if (action === 'prefer-not') { calculator.profile = 'prefer-not'; showHeightInstrument() }
+  if (action === 'calculator-failed') showCalculatorFailure()
+  if (action === 'reduced-motion') document.body.classList.toggle('simulate-reduced-motion')
   if (action === 'reset') resetJourney()
   renderSimulator()
 })
@@ -410,9 +595,22 @@ window.addEventListener('robin-analytics', event => {
 ui.addEventListener('click', event => {
   const target = event.target.closest('button, a')
   if (!target) return
-  if (target.dataset.action === 'pulse-offer') showPulseOffer()
-  if (target.dataset.action === 'pulse-start') startPulse()
-  if (target.dataset.action === 'pulse-cancel') pulseAbort?.abort()
+  if (target.dataset.action === 'calculator-offer') showCalculatorOffer()
+  if (target.dataset.action === 'calculator-start') showAdultCheck()
+  if (target.dataset.action === 'calculator-skip') {
+    track('Calculator Skipped', {variant})
+    showQuestion(0)
+  }
+  if (target.dataset.action === 'calculator-adult') showAdultCheck()
+  if (target.dataset.action === 'calculator-profile') showCalculationProfile()
+  if (target.dataset.action === 'calculator-age') showAgeBand()
+  if (target.dataset.action === 'calculator-height') {
+    if (target.dataset.editResult !== undefined) track('Calculator Result Edited', {variant})
+    showHeightInstrument()
+  }
+  if (target.dataset.action === 'calculator-weight') showWeightDial()
+  if (target.dataset.action === 'calculator-activity') showActivity()
+  if (target.dataset.action === 'calculator-result') showCalculatorResult()
   if (target.dataset.action === 'questions') showQuestion(0)
   if (target.dataset.action === 'question-back') showQuestion(questionIndex - 1, {push: false})
   if (target.dataset.action === 'screenings') showScreenings({push: false})
@@ -427,6 +625,21 @@ ui.addEventListener('click', event => {
   }
   if (target.dataset.screening) showScreening(target.dataset.screening)
   if (target.dataset.query) answerQuestion(target.dataset.query)
+  if (target.dataset.adjust) updateInstrument(target.dataset.adjust, calculator[target.dataset.adjust] + Number(target.dataset.direction))
+  if (target.dataset.calc === 'adult') {
+    calculator.adult = target.dataset.value
+    if (calculator.adult === 'no') showUnder18()
+    else showCalculationProfile()
+  }
+  if (target.dataset.calc === 'profile') {
+    calculator.profile = target.dataset.value
+    if (calculator.profile === 'prefer-not') showHeightInstrument()
+    else showAgeBand()
+  }
+  if (target.dataset.calc === 'ageBand') { calculator.ageBand = target.dataset.value; showHeightInstrument() }
+  if (target.dataset.calc === 'activity') { calculator.activity = target.dataset.value; showCalculatorResult() }
+  if (target.dataset.under18 !== undefined) track('Under 18 Official Route Selected', {variant})
+  if (target.dataset.calculatorOfficial !== undefined) track('Official Calculator Selected', {variant})
   if (target.dataset.official) track('Official Action Selected', {variant, screening: target.dataset.official})
 })
 
@@ -444,6 +657,28 @@ window.addEventListener('robin-open-cards', () => {
   announce('Robin guide opened')
 })
 window.addEventListener('robin-reset', resetJourney)
+window.addEventListener('popstate', event => {
+  const target = event.state?.robinState
+  if (!target) return
+  restoringHistory = true
+  const routes = {
+    introduction: showIntro,
+    'calculator-offer': showCalculatorOffer,
+    'calculator-adult': showAdultCheck,
+    'calculator-under18': showUnder18,
+    'calculator-profile': showCalculationProfile,
+    'calculator-age': showAgeBand,
+    'calculator-height': showHeightInstrument,
+    'calculator-weight': showWeightDial,
+    'calculator-activity': showActivity,
+    'calculator-result': showCalculatorResult,
+    shortlist: showScreenings,
+  }
+  const questionMatch = target.match(/^question-(\d+)$/)
+  if (questionMatch) showQuestion(Number(questionMatch[1]), {push: false})
+  else routes[target]?.({push: false})
+  restoringHistory = false
+})
 robinControls?.addEventListener('click', event => {
   const direction = Number(event.target.closest('[data-rotate]')?.dataset.rotate || 0)
   if (!direction) return
@@ -458,7 +693,7 @@ fallbackModel?.addEventListener('load', () => {
   if (state !== 'model-loading') return
   track('Model Loaded', {variant})
   setStatus('')
-  setTimeout(() => showIntro({push: false}), 250)
+  setTimeout(() => showIntro({push: false}), simulatorEnabled ? 350 : 3000)
 })
 fallbackModel?.addEventListener('error', () => showModelFailure())
 
@@ -467,7 +702,7 @@ const showModelFailure = () => {
   track('Model Failed', {variant})
   fallback.classList.add('is-static')
   setStatus('Robin’s 3D model could not load. The guide is still available.', 'warning')
-  showIntro({push: false})
+  setTimeout(() => showIntro({push: false}), simulatorEnabled ? 350 : 3000)
 }
 
 const start3d = () => {
@@ -475,7 +710,7 @@ const start3d = () => {
   hideJourney()
   setRobinMode('3d')
   setStatus('Loading Robin…')
-  if (fallbackModel?.getAttribute('loaded') !== null) setTimeout(() => showIntro({push: false}), 400)
+  if (fallbackModel?.getAttribute('loaded') !== null) setTimeout(() => showIntro({push: false}), simulatorEnabled ? 350 : 3000)
   else setTimeout(() => {
     if (state === 'model-loading') showModelFailure()
   }, simulatorEnabled ? 1500 : 8000)
@@ -507,4 +742,27 @@ try {
 } catch (error) {
   console.error(error)
   showUnavailable()
+}
+
+if (simulatorEnabled && params.get('simstate')) {
+  setTimeout(() => {
+    const preset = params.get('simstate')
+    if (preset === 'offer') showCalculatorOffer()
+    if (preset === 'height') {
+      Object.assign(calculator, {adult: 'yes', profile: 'male', ageBand: '18-29'})
+      showHeightInstrument()
+    }
+    if (preset === 'weight') {
+      Object.assign(calculator, {adult: 'yes', profile: 'male', ageBand: '18-29'})
+      showWeightDial()
+    }
+    if (preset === 'activity') {
+      Object.assign(calculator, {adult: 'yes', profile: 'male', ageBand: '18-29'})
+      showActivity()
+    }
+    if (preset === 'result') {
+      Object.assign(calculator, {adult: 'yes', profile: 'male', ageBand: '18-29', heightCm: 168, weightKg: 65, activity: 'lvl2'})
+      showCalculatorResult()
+    }
+  }, 500)
 }

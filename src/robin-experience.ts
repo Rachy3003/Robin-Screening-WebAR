@@ -22,6 +22,7 @@ type ExperienceInstance = {
   moveListener: InputListener
   endListener: InputListener
   rotateListener: InputListener
+  cueListener: InputListener
 }
 
 const DRAG_THRESHOLD = 0.018
@@ -109,6 +110,7 @@ ecs.registerComponent({
       moveListener: undefined,
       endListener: undefined,
       rotateListener: undefined,
+      cueListener: undefined,
     } as unknown as ExperienceInstance
 
     instance.startListener = event => beginGesture(instance, event.data)
@@ -121,12 +123,29 @@ ecs.registerComponent({
         ecs.math.quat.yRadians(direction * Math.PI / 8)
       )
     }
+    instance.cueListener = (event: CustomEvent) => {
+      const cue = String(event.detail?.cue || '')
+      const scale = cue === 'reveal-result' ? 1.08 : cue === 'measure-height' ? 1.045 : 1.025
+      ecs.ScaleAnimation.set(world, component.eid, {
+        autoFrom: true,
+        toX: scale,
+        toY: scale,
+        toZ: scale,
+        duration: cue === 'reveal-result' ? 380 : 260,
+        loop: false,
+        reverse: true,
+        easeIn: true,
+        easeOut: true,
+        easingFunction: 'Sine',
+      })
+    }
     instances.set(component.eid, instance)
 
     world.events.addListener(world.events.globalId, ecs.input.SCREEN_TOUCH_START, instance.startListener)
     world.events.addListener(world.events.globalId, ecs.input.SCREEN_TOUCH_MOVE, instance.moveListener)
     world.events.addListener(world.events.globalId, ecs.input.SCREEN_TOUCH_END, instance.endListener)
     window.addEventListener('robin-rotate', instance.rotateListener)
+    window.addEventListener('robin-calculator-cue', instance.cueListener)
 
     const position = ecs.math.vec3.zero()
     world.transform.getLocalPosition(component.eid, position)
@@ -146,22 +165,6 @@ ecs.registerComponent({
       easingFunction: 'Sine',
     })
     window.dispatchEvent(new CustomEvent('robin-placed'))
-    window.addEventListener('robin-pulse-start', (event: Event) => {
-      const bpm = Number((event as CustomEvent).detail?.bpm || 72)
-      const duration = Math.max(350, Math.min(1300, 60000 / bpm))
-      ecs.ScaleAnimation.set(world, component.eid, {
-        autoFrom: true,
-        toX: 1.035,
-        toY: 1.035,
-        toZ: 1.035,
-        duration,
-        loop: true,
-        reverse: true,
-        easeIn: true,
-        easeOut: true,
-        easingFunction: 'Sine',
-      })
-    }, {once: true})
   },
   remove: (world, component) => {
     const instance = instances.get(component.eid)
@@ -170,6 +173,7 @@ ecs.registerComponent({
     world.events.removeListener(world.events.globalId, ecs.input.SCREEN_TOUCH_MOVE, instance.moveListener)
     world.events.removeListener(world.events.globalId, ecs.input.SCREEN_TOUCH_END, instance.endListener)
     window.removeEventListener('robin-rotate', instance.rotateListener)
+    window.removeEventListener('robin-calculator-cue', instance.cueListener)
     world.deleteEntity(instance.tapTarget)
     instances.delete(component.eid)
   },
