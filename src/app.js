@@ -86,9 +86,9 @@ const setRobinMode = (mode, source = 'assigned') => {
   if (arToggle) {
     const enabled = mode === 'ar'
     arToggle.setAttribute('aria-pressed', String(enabled))
-    arToggle.setAttribute('aria-label', enabled ? 'AR is on. Switch to screen-based 3D' : 'AR is off. Place Robin in my space')
+    arToggle.setAttribute('aria-label', enabled ? 'AR is on. Switch to screen-based 3D' : 'AR is off. Place HealthHub Bot in my space')
   }
-  track('Robin Visible', {variant, capability: mode, source})
+  track('HealthHub Bot Visible', {variant, capability: mode, source})
   renderSimulator()
 }
 
@@ -103,7 +103,7 @@ const render = (html, options = {}) => {
   shell.hidden = false
   stopIdlePrompts()
   const content = html.replaceAll('<div class="sheet-handle" aria-hidden="true"></div>', '')
-  ui.innerHTML = `<button class="sheet-handle" data-action="toggle-sheet" aria-expanded="true" aria-label="Minimise this panel"></button><picture class="robin-sheet-portrait-frame"><source srcset="./assets/robin-portrait.avif" type="image/avif"><source srcset="./assets/robin-portrait.webp" type="image/webp"><img class="robin-sheet-portrait" src="./assets/robin-portrait.png" alt="" aria-hidden="true"></picture>${content}<div class="panel-tools"><button data-action="mode-menu" aria-label="Experience options">•••</button><button data-action="close" aria-label="Close and see Robin">×</button></div>`
+  ui.innerHTML = `<button class="sheet-handle" data-action="toggle-sheet" aria-expanded="true" aria-label="Minimise this panel"></button><picture class="robin-sheet-portrait-frame"><source srcset="./assets/robin-portrait.avif" type="image/avif"><source srcset="./assets/robin-portrait.webp" type="image/webp"><img class="robin-sheet-portrait" src="./assets/robin-portrait.png" alt="" aria-hidden="true"></picture>${content}<div class="panel-tools"><button data-action="mode-menu" aria-label="Experience options">•••</button><button data-action="close" aria-label="Close and see HealthHub Bot">×</button></div>`
   ui.querySelector('.sheet-handle')?.addEventListener('click', event => {
     event.stopPropagation()
     toggleSheet()
@@ -152,7 +152,7 @@ const stopIdlePrompts = () => {
 const showPrompt = (step) => {
   if (!spatialPrompt || !shell.hidden) return
   const prompts = [
-    `<p>How can I help?</p><button class="primary" data-prompt="ask">Ask Robin a question</button>`,
+    `<p>How can I help?</p><button class="primary" data-prompt="ask">Ask HealthHub Bot a question</button>`,
     `<p>Would you like to explore HealthHub?</p><a class="primary link" href="https://www.healthhub.sg/" target="_blank" rel="noopener">Visit HealthHub</a>`,
     `<p>Take HealthHub with you</p><div class="store-links"><a href="https://apps.apple.com/sg/app/healthhub-sg/id1034200875"><img src="./assets/apple-app-store.png" alt="Download on the App Store"></a><a href="https://play.google.com/store/apps/details?id=sg.gov.hpb.healthhub"><img src="./assets/google-play.png" alt="Get it on Google Play"></a></div>`,
   ]
@@ -179,7 +179,7 @@ const closeJourney = () => {
   closedMarkup = ui.innerHTML
   closedPanelClass = ui.className
   hideJourney()
-  setStatus('Photo mode — tap Robin to resume')
+  setStatus('Photo mode — tap HealthHub Bot to resume')
   startIdlePrompts()
   track('Journey Closed', {variant, state: closedState})
 }
@@ -204,11 +204,11 @@ const showModeMenu = () => {
   }
   state = 'mode-menu'
   render(`
-    <p class="eyebrow">Experience options</p><h1>Choose how Robin appears</h1>
+    <p class="eyebrow">Experience options</p><h1>Choose how HealthHub Bot appears</h1>
     <p>Your progress will stay exactly where it is.</p>
     <div class="mode-menu">
-      <button class="primary" data-mode="${current === 'ar' ? '3d' : 'ar'}">${current === 'ar' ? 'Use screen-based 3D' : 'Place Robin in my space'}</button>
-      ${current === 'ar' ? '<button class="secondary" data-action="move-robin">Move Robin</button>' : ''}
+      <button class="primary" data-mode="${current === 'ar' ? '3d' : 'ar'}">${current === 'ar' ? 'Use screen-based 3D' : 'Place HealthHub Bot in my space'}</button>
+      ${current === 'ar' ? '<button class="secondary" data-action="move-robin">Move HealthHub Bot</button>' : ''}
       <button class="secondary" data-action="resume">Back</button>
     </div>
   `, {surface: 'conversation'})
@@ -246,7 +246,7 @@ const showUnavailable = () => {
   state = 'unavailable'
   setStatus('')
   render(`
-    <p class="eyebrow">Robin screening guide</p>
+    <p class="eyebrow">HealthHub Bot screening guide</p>
     <h1>This experience is temporarily unavailable</h1>
     <p>You can still use the official HealthHub screening journey.</p>
     <a class="primary link" href="${CAMPAIGN.officialUrl}" target="_blank" rel="noopener">Open official HealthHub page</a>
@@ -274,7 +274,7 @@ const showReadyToPlace = () => {
   arFallbackButton.hidden = true
   state = 'ready-to-place'
   hideJourney()
-  setStatus('Surface found. Tap the target to place Robin')
+  setStatus('Surface found. Tap the target to place HealthHub Bot')
   renderSimulator()
 }
 
@@ -289,7 +289,7 @@ const showIntro = ({push = true} = {}) => {
   setStatus('')
   robinControls.hidden = false
   render(`
-    <p class="eyebrow">Meet Robin</p>
+    <p class="eyebrow">Meet HealthHub Bot</p>
     <h1>Let’s look at the bigger picture</h1>
     <p>I can help you explore which general health screenings may be relevant. I won’t diagnose you or confirm eligibility.</p>
     <button class="primary" data-action="calculator-offer">Continue</button>
@@ -302,8 +302,8 @@ const showPlaced = () => {
   arFallbackButton.hidden = true
   state = 'placed'
   hideJourney()
-  setStatus('Robin is ready')
-  track('Robin Placed', {variant})
+  setStatus('HealthHub Bot is ready')
+  track('HealthHub Bot Placed', {variant})
   setTimeout(() => closedMarkup ? resumeJourney() : showIntro({push: false}), simulatorEnabled ? 350 : 3000)
 }
 
@@ -328,7 +328,7 @@ const showCalculatorOffer = () => {
   render(`
     <p class="eyebrow">Optional</p>
     <h1>Know your health numbers</h1>
-    <p>Use Robin's interactive tools to estimate your BMI and daily calorie needs. It takes about a minute and does not change your screening options.</p>
+    <p>Use HealthHub Bot's interactive tools to estimate your BMI and daily calorie needs. It takes about a minute and does not change your screening options.</p>
     <button class="primary" data-action="calculator-start">Start calculator</button>
     <button class="secondary" data-action="calculator-skip">Skip to screening guide</button>
   `)
@@ -357,7 +357,7 @@ const showUnder18 = () => {
   render(`
     <p class="eyebrow">Age-appropriate guidance</p>
     <h1>Adult calculations aren't the right fit yet</h1>
-    <p>Health needs change as you grow. Use HealthHub's nutrition guidance for your age, or continue with Robin's general screening guide.</p>
+    <p>Health needs change as you grow. Use HealthHub's nutrition guidance for your age, or continue with HealthHub Bot's general screening guide.</p>
     <a class="primary link" href="${CALCULATOR_RULES.under18Url}" target="_blank" rel="noopener" data-under18>Open HealthHub nutrition guidance <span aria-hidden="true">↗</span></a>
     <button class="secondary" data-action="questions">Continue to screening guide</button>
     ${calculatorBack('calculator-adult')}
@@ -382,7 +382,7 @@ const showAgeBand = () => {
   render(`
     ${calculatorProgress(3)}
     <h1>Set your age</h1>
-    <p>Turn the dial once. Robin will use it for both calculations and screening guidance.</p>
+    <p>Turn the dial once. HealthHub Bot will use it for both calculations and screening guidance.</p>
     <div class="weight-instrument">
       ${instrumentButton('age', -1, 'Decrease age by one year')}
       <div id="age-dial" class="weight-dial" data-dial-field="age" role="slider" tabindex="0" aria-label="Age in years" aria-valuemin="18" aria-valuemax="100" aria-valuenow="${calculator.age}" style="--dial-angle:${-125 + ((calculator.age - 18) / 82) * 250}deg">
@@ -631,7 +631,7 @@ const showScreenings = ({push = true} = {}) => {
       ${items.map(item => `<button class="screening" data-screening="${item.id}"><strong>${item.title}</strong><span>${item.relevance}</span></button>`).join('')}
     </div>
     <button class="secondary" data-action="edit">Edit answers</button>
-    <button class="secondary" data-action="ask">Ask Robin a question</button>
+    <button class="secondary" data-action="ask">Ask HealthHub Bot a question</button>
   `, {push})
 }
 
@@ -654,7 +654,7 @@ const showScreening = (id, page = 0) => {
     <h1>${item.title}</h1>
     <h2>${title}</h2><p>${content}</p>
     ${screeningPage === 3 ? `<a class="primary link" href="${CAMPAIGN.officialUrl}" target="_blank" rel="noopener" data-official="${id}">Open official HealthHub page <span aria-hidden="true">↗</span></a>` : `<button class="primary" data-screening-page="${id}" data-page="${screeningPage + 1}">Next</button>`}
-    <button class="secondary" data-action="ask">Ask Robin</button>
+    <button class="secondary" data-action="ask">Ask HealthHub Bot</button>
     <button class="secondary" data-action="${screeningPage ? 'screening-back' : 'screenings'}" data-screening-id="${id}">Back</button>
   `)
 }
@@ -663,14 +663,14 @@ const intents = [
   {pattern: /medisave|claim|pay|cost|price|subsid/i, answer: 'General screening packages are not automatically MediSave-claimable. Selected tests or follow-up procedures may qualify, and subsidies depend on eligibility. HealthHub or the provider should confirm current costs and support.'},
   {pattern: /fast|eat|drink|prepare/i, answer: 'Some blood tests may be fasting or non-fasting. Ask the clinic which test is planned before changing what you eat or drink.'},
   {pattern: /where|clinic|location|book|appointment/i, answer: 'Healthier SG screening is available through participating providers. Use the official HealthHub journey when you are ready to verify eligibility or arrange a screening.'},
-  {pattern: /result|positive|follow.?up|abnormal/i, answer: 'A screening result may lead to a follow-up discussion or another test. The clinic will explain the appropriate next step; Robin does not interpret results.'},
+  {pattern: /result|positive|follow.?up|abnormal/i, answer: 'A screening result may lead to a follow-up discussion or another test. The clinic will explain the appropriate next step; HealthHub Bot does not interpret results.'},
 ]
 
 const showAsk = (answer = '') => {
   state = 'ask'
   render(`
     <div class="sheet-handle" aria-hidden="true"></div>
-    <p class="eyebrow">Ask Robin</p>
+    <p class="eyebrow">Ask HealthHub Bot</p>
     <h1>What would you like to know?</h1>
     <div class="chips">
       <button data-query="Can I use MediSave?">Can I use MediSave?</button>
@@ -710,7 +710,7 @@ const renderSimulator = () => {
   simulatorPanel.hidden = simulatorUiHidden
   const eventText = simulatorEvents.slice(-6).map(event => `${event.name} ${JSON.stringify(event.props)}`).join('\n')
   simulatorPanel.innerHTML = `
-    <div class="simulator__head"><h2>Robin Simulator</h2><button data-sim="collapse" aria-label="Collapse simulator">−</button></div>
+    <div class="simulator__head"><h2>HealthHub Bot Simulator</h2><button data-sim="collapse" aria-label="Collapse simulator">−</button></div>
     <p><strong>State:</strong> ${escapeHtml(state)} · <strong>Mode:</strong> ${escapeHtml(document.body.dataset.robinMode || '')}<br><strong>Calculator:</strong> ${calculator.heightCm} cm · ${calculator.weightKg} kg · ${escapeHtml(calculator.profile || 'unset')}</p>
     <div class="simulator__grid">
       <button data-sim="loading">Loading</button><button data-sim="scanning">Scanning</button>
@@ -813,7 +813,7 @@ ui.addEventListener('click', event => {
   if (target.dataset.action === 'move-robin') {
     window.dispatchEvent(new CustomEvent('robin-reposition-request'))
     closeJourney()
-    setStatus('Tap a new surface to move Robin')
+    setStatus('Tap a new surface to move HealthHub Bot')
   }
   if (target.dataset.question) {
     answers[target.dataset.question] = target.dataset.value
@@ -863,9 +863,9 @@ window.addEventListener('robin-placement-missed', showPlacementMissed)
 window.addEventListener('robin-pickup-start', () => {
   preserveJourney()
   hideJourney()
-  setStatus('Robin picked up — move your phone, then tap a surface to place him')
-  announce('Robin picked up. Tap a surface to place him.')
-  track('Robin Picked Up', {variant})
+  setStatus('HealthHub Bot picked up — move your phone, then tap a surface to place it')
+  announce('HealthHub Bot picked up. Tap a surface to place it.')
+  track('HealthHub Bot Picked Up', {variant})
 })
 window.addEventListener('robin-open-cards', () => {
   if (['scanning', 'ready-to-place', 'placed'].includes(state)) return
@@ -925,7 +925,7 @@ const showModelFailure = () => {
   state = 'model-failure'
   track('Model Failed', {variant})
   fallback.classList.add('is-static')
-  setStatus('Robin’s 3D model could not load. The guide is still available.', 'warning')
+  setStatus('HealthHub Bot’s 3D model could not load. The guide is still available.', 'warning')
   setTimeout(() => showIntro({push: false}), simulatorEnabled ? 350 : 3000)
 }
 
@@ -935,7 +935,7 @@ const start3d = (source = 'assigned') => {
   state = 'model-loading'
   hideJourney()
   setRobinMode('3d', source)
-  setStatus('Loading Robin…')
+  setStatus('Loading HealthHub Bot…')
   if (fallbackModel?.getAttribute('loaded') !== null) setTimeout(() => showIntro({push: false}), simulatorEnabled ? 350 : 3000)
   else setTimeout(() => {
     if (state === 'model-loading') showModelFailure()
@@ -951,7 +951,7 @@ arFallbackButton?.addEventListener('click', () => {
 const showLoading = () => {
   state = 'loading'
   hideJourney()
-  setStatus(variant === 'ar' ? 'Starting camera…' : 'Preparing Robin…')
+  setStatus(variant === 'ar' ? 'Starting camera…' : 'Preparing HealthHub Bot…')
   robinControls.hidden = true
   arFallbackButton.hidden = true
   track('Loading Started', {variant})

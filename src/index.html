@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Robin Screening Guide</title>
-  <meta name="description" content="Explore general health screenings with Robin.">
+  <title>HealthHub Bot Screening Guide</title>
+  <meta name="description" content="Explore general health screenings with HealthHub Bot.">
   <script crossorigin="anonymous" src="./external/runtime/runtime.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@8thwall/engine-binary@1/dist/xr.js" async crossorigin="anonymous" data-preload-chunks="slam"></script>
   <script src="https://cdn.jsdelivr.net/npm/@8thwall/landing-page@1/dist/landing-page.js" crossorigin="anonymous"></script>
@@ -33,7 +33,7 @@
     .ar-toggle{position:fixed;z-index:60;top:max(12px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));display:flex;align-items:center;gap:8px;min-height:48px;padding:7px 10px 7px 13px;border:1px solid var(--line);border-radius:999px;background:#fffffff2;color:var(--dark);font-weight:900;box-shadow:0 8px 28px #052c2438;backdrop-filter:blur(12px)}.ar-toggle[hidden]{display:none}.ar-toggle__track{position:relative;width:38px;height:24px;border-radius:99px;background:#879b95;transition:background 180ms ease}.ar-toggle__track::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 2px 6px #0003;transition:transform 180ms ease}.ar-toggle[aria-pressed="true"] .ar-toggle__track{background:var(--green)}.ar-toggle[aria-pressed="true"] .ar-toggle__track::after{transform:translateX(14px)}
     .sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
     .fallback{position:fixed;inset:0;z-index:10;display:grid;place-items:start center;background-color:#5fc8a9;background-image:image-set(url("./assets/singapore-skyline.avif") type("image/avif"),url("./assets/singapore-skyline.webp") type("image/webp"),url("./assets/singapore-skyline.png") type("image/png"));background-position:34% center;background-size:cover;background-repeat:no-repeat}
-    .fallback::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,transparent 48%,#063c302b);pointer-events:none}.fallback model-viewer{position:relative;z-index:1;width:100%;height:72vh;margin-top:4vh;transition:transform 300ms ease}.fallback[data-cue="measure-height"] model-viewer{transform:translateY(-2%) scale(1.035)}.fallback[data-cue="turn-weight-dial"] model-viewer{transform:rotate(2deg)}.fallback[data-cue="reveal-result"] model-viewer{transform:scale(1.07)}.fallback.is-static model-viewer{display:none}.fallback.is-static::before{content:"Robin";display:grid;place-items:center;width:150px;height:150px;margin-top:22vh;border-radius:50%;background:var(--green-dark);color:#fff;font-size:28px;font-weight:900}
+    .fallback::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,transparent 48%,#063c302b);pointer-events:none}.fallback model-viewer{position:relative;z-index:1;width:100%;height:72vh;margin-top:4vh;transition:transform 300ms ease}.fallback[data-cue="measure-height"] model-viewer{transform:translateY(-2%) scale(1.035)}.fallback[data-cue="turn-weight-dial"] model-viewer{transform:rotate(2deg)}.fallback[data-cue="reveal-result"] model-viewer{transform:scale(1.07)}.fallback.is-static model-viewer{display:none}.fallback.is-static::before{content:"HealthHub Bot";display:grid;place-items:center;width:150px;height:150px;margin-top:22vh;padding:12px;border-radius:50%;background:var(--green-dark);color:#fff;font-size:23px;font-weight:900;text-align:center}
     .panel-tools{position:absolute;top:12px;right:12px;display:flex;gap:6px}.panel-tools button{min-width:44px;min-height:44px;padding:8px;border:0;border-radius:50%;background:var(--soft);color:var(--dark);font-weight:900}.panel>h1:first-of-type{padding-right:42px}.spatial-prompt{position:fixed;z-index:55;left:50%;bottom:19vh;width:min(310px,calc(100% - 34px));transform:translateX(-50%);padding:16px 18px;border:1px solid #d4e9e1;border-radius:22px 22px 22px 5px;background:#fffffff2;color:var(--dark);box-shadow:0 16px 45px #052c2455;pointer-events:auto;animation:snapshot-pop 280ms ease-out}.spatial-prompt[hidden]{display:none}.spatial-prompt p{margin:0 0 10px;font-weight:800}.prompt-actions{display:grid;gap:8px}.prompt-actions a,.prompt-actions button{display:block;margin:0}.store-links{display:flex;gap:8px}.store-links a{flex:1}.store-links img{display:block;width:100%;height:44px;object-fit:contain}.mode-menu{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
     .fallback[hidden]{display:none}body[data-robin-mode="3d"] canvas{visibility:hidden}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}body.simulate-reduced-motion *{animation:none!important;transition:none!important}
     .simulator{position:fixed;z-index:80;top:max(8px,env(safe-area-inset-top));left:8px;width:min(330px,calc(100vw - 16px));max-height:56vh;overflow:auto;padding:12px;border:2px solid #6941c6;border-radius:16px;background:#161225ed;color:#fff;font-size:12px;box-shadow:0 12px 40px #0008}
@@ -43,18 +43,18 @@
   </style>
 </head>
 <body>
-  <div id="robin-3d" class="fallback" hidden aria-label="Screen-based 3D Robin">
-    <model-viewer src="./assets/robin.glb" alt="Robin, the HealthHub guide" camera-controls auto-rotate interaction-prompt="none"></model-viewer>
+  <div id="robin-3d" class="fallback" hidden aria-label="Screen-based 3D HealthHub Bot">
+    <model-viewer src="./assets/robin.glb" alt="HealthHub Bot, the HealthHub guide" camera-controls auto-rotate interaction-prompt="none"></model-viewer>
   </div>
-  <aside id="simulator" class="simulator" hidden aria-label="Robin journey simulator"></aside>
+  <aside id="simulator" class="simulator" hidden aria-label="HealthHub Bot journey simulator"></aside>
   <div id="status-chip" class="status-chip" hidden></div>
   <button id="ar-fallback" class="ar-fallback" hidden>Continue without AR</button>
   <button id="ar-toggle" class="ar-toggle" aria-pressed="true" aria-label="AR is on. Switch to screen-based 3D">
     <span>AR</span><i class="ar-toggle__track" aria-hidden="true"></i>
   </button>
   <div id="robin-controls" class="robin-controls" hidden>
-    <button data-rotate="-1" aria-label="Turn Robin left">↶</button>
-    <button data-rotate="1" aria-label="Turn Robin right">↷</button>
+    <button data-rotate="-1" aria-label="Turn HealthHub Bot left">↶</button>
+    <button data-rotate="1" aria-label="Turn HealthHub Bot right">↷</button>
   </div>
   <aside id="spatial-prompt" class="spatial-prompt" hidden aria-live="polite"></aside>
   <div id="journey-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>

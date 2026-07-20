@@ -1,6 +1,6 @@
-# Robin Screening WebAR
+# HealthHub Bot Screening WebAR
 
-Independent 8th Wall pilot for a Robin-led screening journey with an optional BMI and calorie calculator. This project does not replace or modify `Robin-WebAR`.
+Independent 8th Wall pilot for a HealthHub Bot-led screening journey with an optional BMI and calorie calculator. This project does not replace or modify the existing `Robin-WebAR` codebase.
 
 Run `npm ci`, then `npm run serve`. Use the 8th Wall device connection workflow for camera and world-tracking tests.
 
