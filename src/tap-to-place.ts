@@ -4,16 +4,18 @@ const OBJECT_PLACED_EVENT = 'object-placed'
 const RESET_EVENT = 'robin-reset'
 let placedRobin: bigint | null = null
 let placementWorld: ecs.World | null = null
-const MODEL_FRONT_OFFSET = -Math.PI / 2
 
 const faceActiveCamera = (world: ecs.World, eid: bigint, position: {x: number, y: number, z: number}) => {
   try {
     const cameraPosition = world.transform.getWorldPosition(world.camera.getActiveEid())
-    const yaw = Math.atan2(cameraPosition.x - position.x, cameraPosition.z - position.z)
-    world.getEntity(eid).set(ecs.Quaternion, ecs.math.quat.yRadians(yaw + MODEL_FRONT_OFFSET))
-  } catch (_) {
-    world.getEntity(eid).set(ecs.Quaternion, ecs.math.quat.yRadians(MODEL_FRONT_OFFSET))
-  }
+    // Keep Robin upright while using the engine's camera-facing transform. This
+    // avoids device-specific yaw differences from manually calculating an angle.
+    world.transform.lookAtWorld(eid, {
+      x: cameraPosition.x,
+      y: position.y,
+      z: cameraPosition.z,
+    })
+  } catch (_) {}
 }
 
 window.addEventListener('robin-reposition-request', () => {

@@ -16,6 +16,7 @@ type GestureState = {
 type InputListener = (event: any) => void
 
 type ExperienceInstance = {
+  root: bigint
   tapTarget: bigint
   rotationTarget: bigint
   state: ExperienceState
@@ -48,17 +49,49 @@ const makeRobotTouchTarget = (world: ecs.World, parent: bigint) => {
   ecs.Ui.set(world, tapTarget, {
     type: '3d',
     fixedSize: false,
-    width: '280',
-    height: '410',
-    opacity: 0,
-    backgroundOpacity: 0,
+    width: '320',
+    height: '440',
+    // A nearly transparent surface remains raycastable on Android browsers,
+    // unlike a fully transparent UI plane on some devices.
+    opacity: 0.001,
+    backgroundOpacity: 0.001,
     text: '',
   })
   return tapTarget
 }
 
-const beginGesture = (instance: ExperienceInstance, event: ecs.ScreenTouchStartEvent) => {
-  if (instance.state !== 'ready' || event.target !== instance.tapTarget) return
+const isRobinTarget = (
+  world: ecs.World,
+  instance: ExperienceInstance,
+  target: bigint | undefined
+) => {
+  if (!target) return false
+  let entity: ecs.Entity | null = world.getEntity(target)
+  while (entity) {
+    if (entity.eid === instance.tapTarget || entity.eid === instance.root) return true
+    entity = entity.getParent()
+  }
+  return false
+}
+
+const faceActiveCamera = (world: ecs.World, eid: bigint) => {
+  try {
+    const position = world.transform.getWorldPosition(eid)
+    const cameraPosition = world.transform.getWorldPosition(world.camera.getActiveEid())
+    world.transform.lookAtWorld(eid, {
+      x: cameraPosition.x,
+      y: position.y,
+      z: cameraPosition.z,
+    })
+  } catch (_) {}
+}
+
+const beginGesture = (
+  world: ecs.World,
+  instance: ExperienceInstance,
+  event: ecs.ScreenTouchStartEvent
+) => {
+  if (instance.state !== 'ready' || !isRobinTarget(world, instance, event.target)) return
   instance.gesture = {
     pointerId: event.pointerId,
     startX: event.position.x,
@@ -95,11 +128,15 @@ const updateGesture = (
   gesture.lastY = event.position.y
 }
 
-const endGesture = (instance: ExperienceInstance, event: ecs.ScreenTouchEndEvent) => {
+const endGesture = (
+  world: ecs.World,
+  instance: ExperienceInstance,
+  event: ecs.ScreenTouchEndEvent
+) => {
   const gesture = instance.gesture
   if (!gesture || event.pointerId !== gesture.pointerId) return
   clearTimeout(gesture.longPressTimer)
-  if (!gesture.dragging && !gesture.pickedUp && event.endTarget === instance.tapTarget) {
+  if (!gesture.dragging && !gesture.pickedUp && isRobinTarget(world, instance, event.endTarget)) {
     window.dispatchEvent(new CustomEvent('robin-open-cards'))
   }
   instance.gesture = undefined
@@ -110,6 +147,7 @@ ecs.registerComponent({
   add: (world, component) => {
     const tapTarget = makeRobotTouchTarget(world, component.eid)
     const instance = {
+      root: component.eid,
       tapTarget,
       rotationTarget: findRotationTarget(world, component.eid),
       state: 'ready',
@@ -120,9 +158,9 @@ ecs.registerComponent({
       cueListener: undefined,
     } as unknown as ExperienceInstance
 
-    instance.startListener = event => beginGesture(instance, event.data)
+    instance.startListener = event => beginGesture(world, instance, event.data)
     instance.moveListener = event => updateGesture(world, instance, event.data)
-    instance.endListener = event => endGesture(instance, event.data)
+    instance.endListener = event => endGesture(world, instance, event.data)
     instance.rotateListener = (event: CustomEvent) => {
       const direction = Number(event.detail?.direction || 0)
       world.transform.rotateSelf(
@@ -154,6 +192,14 @@ ecs.registerComponent({
     window.addEventListener('robin-rotate', instance.rotateListener)
     window.addEventListener('robin-calculator-cue', instance.cueListener)
     window.addEventListener('robin-pickup-start', instance.cueListener)
+
+    // Prefab children finish initialising after placement. Reapply the
+    // camera-facing transform once on the next task so their setup cannot
+    // overwrite Robin's first orientation.
+    setTimeout(() => {
+      const root = world.getEntity(component.eid)
+      if (!root.isDeleted()) faceActiveCamera(world, component.eid)
+    }, 0)
 
     const position = ecs.math.vec3.zero()
     world.transform.getLocalPosition(component.eid, position)
